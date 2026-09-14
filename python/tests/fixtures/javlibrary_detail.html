@@ -1,0 +1,49 @@
+<!--
+javlibrary 详情页骨架，仅保留 scraper/sites/javlibrary.py 用到的选择器结构。
+
+刻意覆盖两条容易出问题的分支：
+  * video_date 的文本直接落在 td.text 上；
+  * video_length 的文本落在外层 td 内包的 span.text 上（站点的实际结构）。
+  解析实现必须两条都能命中，否则时长会静默变成 None。
+-->
+<html>
+<head><title>测试详情页</title></head>
+<body>
+  <div id="video_title">
+    <h3><a href="/cn/?v=test123">IPZZ-001 测试标题</a></h3>
+  </div>
+
+  <div id="video_date">
+    <table><tr><td class="text">2024-03-15</td></tr></table>
+  </div>
+
+  <div id="video_length">
+    <table><tr><td><span class="text">120分钟</span></td></tr></table>
+  </div>
+
+  <div id="video_genres">
+    <span class="genre">
+      <a href="/cn/genre/a">类别A</a>
+      <a href="/cn/genre/b">类别B</a>
+    </span>
+  </div>
+
+  <div id="video_cast">
+    <span class="cast">
+      <span class="star"><a href="/cn/star/a">演员A</a></span>
+      <span class="star"><a href="/cn/star/b">演员B</a></span>
+    </span>
+  </div>
+
+  <div id="video_jacket">
+    <img id="video_jacket_img" src="//img.example.com/ipzz-001-cover.jpg">
+  </div>
+
+  <div class="previewthumbs">
+    <img src="//img.example.com/ipzz-001-1.jpg">
+    <img src="//img.example.com/ipzz-001-2.jpg">
+    <img src="">
+    <img>
+  </div>
+</body>
+</html>

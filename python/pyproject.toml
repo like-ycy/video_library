@@ -1,0 +1,53 @@
+[project]
+name = "scraper"
+version = "0.1.0"
+description = "视频库刮削器：抓取元数据与图片，以 NDJSON 事件流输出给 Go 侧"
+readme = "README.md"
+requires-python = ">=3.14"
+
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "httpx>=0.28.1",
+    # ★ 锁死此版本，不要用 >= 或 ^。
+    # browser.py 中 SB(uc=True) + solve_captcha() 的反爬行为与 seleniumbase
+    # 内部实现强相关，且已在站点上人工验证通过。升级任何一版都必须重新验证
+    # 验证码流程，并同步更新 browser.py 顶部的警示注释。
+    "seleniumbase==4.51.2",
+]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.22",
+    "pytest>=8.0",
+    "ruff>=0.15.22",
+]
+
+[project.scripts]
+scraper = "scraper.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scraper"]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# browser.py 的 fetch_html() 与 SB(...) 参数是从既有生产代码逐字复制的，
+# 不允许任何自动改写 —— 包括 import 排序。见该文件顶部注释。
+"src/scraper/browser.py" = ["I001"]

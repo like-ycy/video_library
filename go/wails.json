@@ -1,0 +1,16 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "videolib",
+  "outputfilename": "VideoLib",
+  "frontend:dir": "frontend",
+  "frontend:install": "echo no frontend dependencies",
+  "frontend:build": "echo no frontend build step",
+  "author": {
+    "name": "videolib"
+  },
+  "info": {
+    "productName": "视频库",
+    "productVersion": "0.1.0",
+    "comments": "本地视频库：刮削元数据 + 浏览观看"
+  }
+}

@@ -1,0 +1,83 @@
+name: 构建 Windows 产物
+
+# 为什么必须放在 Windows runner 上
+# ---------------------------------
+# PyInstaller 不是交叉编译器。官方文档（doc/building-for-other-platforms.rst）：
+#
+#   "PyInstaller is not a cross compiler. Due to Python's dynamic nature,
+#    PyInstaller needs to run snippets of code from the target Python environment
+#    at build time and it can only do that if said environment is runable on
+#    (i.e. built for) the current platform. Hence, PyInstaller ever becoming
+#    a cross compiler is impossible."
+#
+# 也就是说：它需要在构建时**真的执行目标平台的 Python** 来探测依赖，而 macOS
+# 上跑不了 Windows 的 Python。这不是版本问题，没有绕过的余地。
+#
+# 对比：Go / Wails 侧是**静态编译**，`GOOS=windows` 一条命令就能出 exe，
+# 不需要 Windows。所以同一个 workflow 里 Go 那步其实在 macOS 上也能跑 ——
+# 放这里只是为了让两侧产物来自同一次构建，版本一致。
+#
+# 触发方式：
+#   * 推 tag（v*）时自动构建
+#   * 也可以在 Actions 页面手动触发，用于冒烟验证
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: 安装 Python 3.14
+        run: uv python install 3.14
+
+      - name: 同步依赖
+        working-directory: python
+        run: uv sync
+
+      - name: 打包刮削器（PyInstaller onedir）
+        working-directory: python
+        run: uv run pyinstaller scraper.spec --noconfirm
+
+      # 自检放在打包之后、上传之前：这一步能提前暴露「seleniumbase 资源没被
+      # 收集进去」这类只在运行时才发作的问题，而不是等用户拿到产物才发现。
+      - name: 冻结产物自检
+        working-directory: python
+        run: |
+          .\dist\scraper\scraper.exe version
+          .\dist\scraper\scraper.exe doctor
+
+      - name: 安装 Wails CLI
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+          # go install 不会把 GOPATH/bin 加进 PATH，后续步骤要用 wails，
+          # 所以显式追加到 GITHUB_PATH。
+          #
+          # 注意：所有带反斜杠的命令都写成块标量（run: |）而不是双引号字符串 ——
+          # YAML 的双引号会处理转义序列，"\g" 这类会直接解析失败。
+          "$(go env GOPATH)\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: 打包桌面 App
+        working-directory: go
+        # -webview2 download：把 WebView2 引导程序一并打进安装包，
+        # 覆盖没预装 WebView2 的机器。
+        run: wails build -platform windows/amd64 -webview2 download -clean
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: videolib-windows
+          # 刮削器保持 onedir 结构整体上传，_internal/ 不能丢。
+          path: |
+            python/dist/scraper/**
+            go/build/bin/VideoLib.exe
+          if-no-files-found: error

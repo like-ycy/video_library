@@ -1,0 +1,89 @@
+# ════════════════════════════════════════════════════════════
+#  video_library
+#
+#  原则：只提交「源码 + 配置 + 锁文件 + Wails 脚手架」。
+#  所有可再生成的产物（依赖目录、构建输出、缓存、日志）一律忽略。
+#
+#  下面带前导 / 的规则都是**仓库根锚定**的 —— 这点很关键：
+#  裸写 build/ 会连 go/build/ 一起忽略，而 go/build/ 里的
+#  appicon.png、windows/、darwin/ 是 wails build 必需的脚手架，
+#  必须进版本库。所以这里全部写成 /python/build/ 这样的绝对形式。
+# ════════════════════════════════════════════════════════════
+
+
+# ── Python：字节码与编译产物 ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+
+# ── Python：虚拟环境（uv sync 生成，约 90 MB） ──
+/python/.venv/
+venv/
+.venv/
+
+# ── Python：PyInstaller 产物与中间目录（见 python/scraper.spec） ──
+# dist/scraper/ 是 onedir 产物（必须整体含 _internal/），体积上百 MB，
+# 且只在 Windows 上构建，绝不入库。
+/python/build/
+/python/dist/
+*.spec.bak
+
+# ── Python：工具缓存 ──
+.pytest_cache/
+.ruff_cache/
+
+# ── 测试用仓库内临时目录（见 python/tests/conftest.py） ──
+/python/tests/.tmp/
+
+# ── 本地探针输出（见 python/.probe/） ──
+/python/.probe/
+
+
+# ── Go / Wails ──
+# wailsjs/ 由 `wails build` / `wails generate module` 自动生成，
+# 每次构建都会重写，不入库。
+/go/frontend/wailsjs/
+
+# wails build 的可执行产物。注意只忽略 bin/：
+# 同级的 appicon.png、darwin/Info.plist、windows/* 是构建必需的源文件。
+/go/build/bin/
+
+# Go 测试用的仓库内临时目录
+/go/.gocache-test/
+
+# 依赖一律走 go.mod + go.sum，不 vendor
+/vendor/
+
+
+# ── 运行时依赖与分发产物（由 tools/*.sh | *.ps1 放入） ──
+# ffprobe、打包后的 scraper 属分发产物，不入库。
+/tools/bin/*
+!/tools/bin/.gitkeep
+
+/dist/
+/work/
+
+
+# ── IDE / OS ──
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+
+# ── 本地配置与数据 ──
+# SQLite 索引是可随时重建的派生数据，见 docs/architecture.md。
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+.env.local
+
+
+# ── 日志 ──
+*.log

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>视频库</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">视频库</div>
+    <nav class="nav">
+      <button type="button" class="nav-item active" data-view="watch">观影</button>
+      <button type="button" class="nav-item" data-view="scrape">刮削</button>
+    </nav>
+    <div class="topbar-right">
+      <select id="library-picker" class="library-picker" title="选择视频库"></select>
+      <button type="button" class="btn small" id="add-library">添加库</button>
+      <span class="status" id="status"></span>
+    </div>
+  </header>
+
+  <main>
+    <section class="view" id="view-watch"></section>
+    <section class="view hidden" id="view-scrape"></section>
+  </main>
+
+  <div class="toast hidden" id="toast"></div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
