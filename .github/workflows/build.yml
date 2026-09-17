@@ -1,0 +1,234 @@
+name: 构建产物
+
+# 为什么 Windows 侧必须放在 Windows runner 上
+# ---------------------------------
+# PyInstaller 不是交叉编译器。官方文档（doc/building-for-other-platforms.rst）：
+#
+#   "PyInstaller is not a cross compiler. Due to Python's dynamic nature,
+#    PyInstaller needs to run snippets of code from the target Python environment
+#    at build time and it can only do that if said environment is runable on
+#    (i.e. built for) the current platform. Hence, PyInstaller ever becoming
+#    a cross compiler is impossible."
+#
+# 也就是说：它需要在构建时**真的执行目标平台的 Python** 来探测依赖，而 macOS
+# 上跑不了 Windows 的 Python。这不是版本问题，没有绕过的余地。
+#
+# 所以 Windows 的 scraper.exe 必须在 Windows runner 上打包；macOS 的 scraper
+# 必须在对应架构的 macOS runner 上打包。Go / Wails 侧是静态编译，可以按
+# GOOS/GOARCH 交叉编译，但为了让两侧产物来自同一次构建、架构一致，CI 仍按
+# 目标平台分别在原生 runner 上完成整包。
+#
+# 产物形态
+# --------
+# Windows：上传组装好的分发目录 `dist/VideoLib/**`，解压即可运行：
+#   VideoLib.exe
+#   tools/scraper/scraper.exe + tools/scraper/_internal/
+#
+# macOS：上传 `VideoLib_macos_<arch>.tar.gz`，解开得到同样布局：
+#   VideoLib.app/
+#   tools/scraper/scraper + tools/scraper/_internal/
+#
+# 组装分别走 tools/package.ps1 / tools/package.sh，与本地发布同一路径，
+# 目录结构只在那两个脚本里定义。这个结构同时是 App 侧路径解析的契约
+# （见 go/internal/toolpath），所以末尾有一道断言，结构不对就让构建失败。
+#
+# 尚未包含
+# --------
+# ffprobe 不在这里获取。缺失只影响「时长与编码」两个字段，属文档化的降级路径，
+# package 脚本会给出 warning。需要随包分发时，把对应平台的 ffprobe 放到
+# tools/bin/ 再由 package 脚本收进去。
+#
+# 触发方式：
+#   * 推 tag（v*）时自动构建
+#   * 也可以在 Actions 页面手动触发，用于冒烟验证
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: 构建 Windows x64
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: 安装 Python 3.14
+        run: uv python install 3.14
+
+      - name: 同步依赖
+        working-directory: python
+        run: uv sync
+
+      - name: 打包刮削器（PyInstaller onedir）
+        working-directory: python
+        run: uv run pyinstaller scraper.spec --noconfirm
+
+      # 自检放在打包之后、组装之前：这一步能提前暴露「seleniumbase 资源没被
+      # 收集进去」这类只在运行时才发作的问题，而不是等用户拿到产物才发现。
+      #
+      # 放在这里也是为了让环境问题尽早失败：doctor 会探测 Chrome，缺了立刻
+      # 中断，不必再白跑一遍几分钟的 wails 构建。
+      - name: 冻结产物自检
+        working-directory: python
+        run: |
+          .\dist\scraper\scraper.exe version
+          .\dist\scraper\scraper.exe doctor
+
+      - name: 安装 Wails CLI
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+          # go install 不会把 GOPATH/bin 加进 PATH，后续步骤要用 wails，
+          # 所以显式追加到 GITHUB_PATH。
+          #
+          # 注意：所有带反斜杠的命令都写成块标量（run: |）而不是双引号字符串 ——
+          # YAML 的双引号会处理转义序列，"\g" 这类会直接解析失败。
+          "$(go env GOPATH)\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: 打包桌面 App
+        working-directory: go
+        # -webview2 download 是 Wails 的**默认**策略，写出来只为自解释，并不改变产物：
+        # 它在运行时才发现缺 WebView2，再弹窗并联网安装
+        # （internal/wv2installer/download.go 的构建约束是
+        # !wv2runtime.error && !wv2runtime.browser && !wv2runtime.embed）。
+        # 真正把引导程序打进产物的是 embed，代价是体积增加。
+        # Win10 21H2+ 与 Win11 已自带 WebView2，所以沿用默认策略。
+        run: wails build -platform windows/amd64 -webview2 download -clean
+
+      - name: 组装分发目录
+        shell: pwsh
+        run: |
+          # package.ps1 约定 scraper 在 tools\bin\scraper，而 PyInstaller 产出在
+          # python\dist\scraper。先搬到约定位置，再交给它组装。
+          Move-Item python\dist\scraper tools\bin\scraper
+          .\tools\package.ps1
+
+      - name: 校验分发结构
+        shell: pwsh
+        run: |
+          # 目录结构是 App 侧路径解析的契约（go/internal/toolpath 按
+          # <App>/tools/scraper/scraper.exe 定位）。结构错了，用户那边表现为
+          # 「未找到刮削器组件」，而构建日志一片绿 —— 所以在这里断言，
+          # 而不是等用户反馈。
+          $required = @(
+            "dist\VideoLib\VideoLib.exe",
+            "dist\VideoLib\tools\scraper\scraper.exe",
+            "dist\VideoLib\tools\scraper\_internal"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) { throw "分发结构缺少：$path" }
+          }
+
+          # 从最终位置真跑一次。能跑通才说明 _internal 确实与 scraper.exe 同级，
+          # 而不只是「目录名字对上了」。
+          .\dist\VideoLib\tools\scraper\scraper.exe version
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: videolib-windows-x64
+          # 上传组装好的分发目录：解压即为可运行结构。
+          # 通配符之后的部分保留层级，所以 artifact 根目录下直接就是
+          # VideoLib.exe 与 tools\。
+          path: dist/VideoLib/**
+          if-no-files-found: error
+
+  build-macos:
+    name: 构建 macOS ${{ matrix.goarch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # PyInstaller 不交叉编译：arm64 / x64 的 scraper 必须各自在原生
+          # runner 上打。Go/Wails 虽可交叉编译，整包仍按目标架构分开构建，
+          # 避免 App 与 scraper 架构不一致。
+          - runner: macos-latest
+            goarch: arm64
+          - runner: macos-15-intel
+            goarch: amd64
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go/go.mod
+          cache: true
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: 安装 Python 3.14
+        run: uv python install 3.14
+
+      - name: 同步依赖
+        working-directory: python
+        run: uv sync
+
+      - name: 打包刮削器（PyInstaller onedir）
+        working-directory: python
+        run: uv run pyinstaller scraper.spec --noconfirm
+
+      - name: 冻结产物自检
+        working-directory: python
+        run: |
+          ./dist/scraper/scraper version
+          ./dist/scraper/scraper doctor
+
+      - name: 安装 Wails CLI
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: 打包桌面 App
+        working-directory: go
+        run: wails build -platform "darwin/${{ matrix.goarch }}" -clean
+
+      - name: 组装分发目录
+        run: |
+          rm -rf tools/bin/scraper
+          mkdir -p tools/bin
+          mv python/dist/scraper tools/bin/scraper
+          ./tools/package.sh
+
+      - name: 校验分发结构
+        run: |
+          # 与 Windows 侧同一契约：结构错了用户表现为「未找到刮削器组件」。
+          # toolpath 从 VideoLib.app/Contents/MacOS/ 向上找 tools/scraper/scraper。
+          required=(
+            "dist/VideoLib/VideoLib.app"
+            "dist/VideoLib/VideoLib.app/Contents/MacOS/VideoLib"
+            "dist/VideoLib/tools/scraper/scraper"
+            "dist/VideoLib/tools/scraper/_internal"
+          )
+          for path in "${required[@]}"; do
+            if [[ ! -e "$path" ]]; then
+              echo "分发结构缺少：$path" >&2
+              exit 1
+            fi
+          done
+
+          # 从最终位置真跑一次，确认 _internal 与 scraper 同级且可执行。
+          "./dist/VideoLib/tools/scraper/scraper" version
+
+      - name: 打包上传物
+        run: |
+          mkdir -p out
+          # .app 内大量可执行位与符号链接，zip 上传后容易丢权限；
+          # 用 tar.gz 保留模式位，用户解开即可用。
+          tar -czf "out/VideoLib_macos_${{ matrix.goarch }}.tar.gz" -C dist VideoLib
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: videolib-macos-${{ matrix.goarch }}
+          path: out/*
+          if-no-files-found: error
