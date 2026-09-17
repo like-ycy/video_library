@@ -1,0 +1,346 @@
+/* Base components: buttons, badges, inputs, empty, cards, panels */
+
+/* ── Buttons ── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-control);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  border: 1px solid transparent;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.05s;
+  white-space: nowrap;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn .ms {
+  font-size: 16px;
+}
+
+.btn.primary {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.btn.secondary {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+  font-weight: 500;
+}
+
+.btn.secondary:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--faint);
+}
+
+.btn.ghost {
+  background: transparent;
+  color: var(--text);
+  font-weight: 500;
+  border-color: transparent;
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.btn.danger {
+  background: transparent;
+  color: var(--danger);
+  font-weight: 500;
+  border-color: transparent;
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: var(--danger-bg);
+}
+
+.btn.small {
+  padding: 4px 10px;
+  font-size: var(--fs-xs);
+}
+
+.btn.icon {
+  padding: 6px;
+  width: 32px;
+  height: 32px;
+}
+
+/* ── Inputs ── */
+
+.field,
+.select,
+.input {
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 6px 10px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.12s;
+}
+
+.field:focus,
+.select:focus,
+.input:focus {
+  border-color: var(--primary);
+}
+
+.field::placeholder {
+  color: var(--faint);
+}
+
+.select {
+  appearance: none;
+  padding-right: 28px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 14px) calc(50% - 2px), calc(100% - 9px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+.search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-field .ms {
+  position: absolute;
+  left: 9px;
+  color: var(--muted);
+  font-size: 16px;
+  pointer-events: none;
+}
+
+.search-field .field {
+  padding-left: 30px;
+  width: 100%;
+}
+
+/* ── Status badges (four scrape states + generic) ── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--radius-control);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.badge .ms {
+  font-size: 14px;
+}
+
+/* 未刮削 */
+.badge.pending {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+/* 已刮削 */
+.badge.scraped {
+  background: var(--ok-bg);
+  border-color: var(--ok-border);
+  color: var(--ok);
+}
+
+/* 缺图 */
+.badge.missing-art {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  color: var(--warn);
+}
+
+/* 文件异常 / 缺失 */
+.badge.broken {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+/* 进行中 */
+.badge.running {
+  background: var(--info-bg);
+  border-color: var(--info-border);
+  color: var(--info);
+}
+
+.badge.neutral {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+/* ── Empty state ── */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 24px;
+  min-height: 200px;
+  gap: 8px;
+}
+
+.empty-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.empty-icon .ms {
+  font-size: 28px;
+  color: var(--muted);
+}
+
+.empty-title {
+  font-family: var(--font-title);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.empty-desc {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  max-width: 360px;
+  line-height: 1.6;
+}
+
+.empty-hint {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--faint);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 2px 8px;
+  word-break: break-all;
+}
+
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+/* ── Panel / Card ── */
+
+.panel {
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-panel);
+  padding: 16px;
+}
+
+.panel-title {
+  font-family: var(--font-title);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.panel-desc {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+/* ── Chip ── */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.chip.active {
+  background: var(--primary-container);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* ── Progress bar ── */
+
+.bar {
+  height: 6px;
+  background: var(--surface);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.bar > div {
+  height: 100%;
+  width: 0;
+  background: var(--primary);
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+
+/* ── Star rating (detail page base) ── */
+
+.stars {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.stars button {
+  color: var(--faint);
+  font-size: 20px;
+  line-height: 1;
+  padding: 0;
+  transition: color 0.1s, transform 0.1s;
+}
+
+.stars button.on {
+  color: var(--warn);
+}
+
+.stars button:hover {
+  transform: scale(1.1);
+  color: var(--warn);
+}

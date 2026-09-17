@@ -1,24 +1,26 @@
 import { call } from '../api.js';
-import { clear, h, reportError, toast } from '../ui.js';
-import {
-  formatDate,
-  formatDuration,
-  formatPosition,
-  formatSize,
-  joinOrDash,
-} from '../format.js';
+import { clear, h, reportError, setBusy, toast } from '../ui.js';
+import { emptyState, pageHeader } from '../components/shell.js';
+import { videoCard } from '../components/card.js';
+import { createDetailLayer } from '../components/detail.js';
 
-// 播放中记录进度的最小间隔。每个 tick 都写库是没有意义的 IO ——
-// 视频位置每秒变化多次，而用户真正在意的是「关掉之后能从哪儿接着看」。
-const PROGRESS_SAVE_INTERVAL_MS = 10_000;
+/**
+ * 观影模块：演员首页 / 全部影片。
+ * mode: 'actresses' | 'movies'
+ */
+export function createWatchView(state, options = {}) {
+  const mode = options.mode || 'actresses';
 
-export function createWatchView(state) {
-  const actressList = h('div', { class: 'sidebar' });
+  const actorPanel = h('aside', { class: 'actor-panel' });
   const filters = h('div', { class: 'filters' });
   const grid = h('div', { class: 'grid' });
   const moreBar = h('div', { class: 'load-more' });
   const main = h('div', { class: 'watch-main' }, [filters, grid, moreBar]);
-  const el = h('div', { class: 'watch-root' }, [actressList, main]);
+  const body = h('div', { class: 'watch-root' }, [actorPanel, main]);
+  const headerHost = h('div');
+  const root = h('div', { class: 'page', dataset: { view: mode } }, [headerHost, body]);
+
+  const detail = createDetailLayer(state);
 
   const view = {
     actresses: [],
@@ -34,26 +36,27 @@ export function createWatchView(state) {
     total: 0,
     items: [],
     loading: false,
+    showActors: mode === 'actresses',
   };
 
-  let overlay = null;
-  let lightbox = null;
-
-  // ── 数据加载 ────────────────────────────────────────────────────────────
+  // ── 加载 ───────────────────────────────────────────────────────────────
 
   async function reloadAll() {
     if (!state.libraryId) {
-      renderPlaceholder();
+      renderNoLibrary();
       return;
     }
     view.page = 1;
     view.items = [];
     view.activeActress = '';
     view.selectedGenres.clear();
-    view.keyword = '';
+    view.keyword = state.keyword || '';
     view.favoriteOnly = false;
 
-    await Promise.all([loadActresses(), loadGenres()]);
+    await Promise.all([
+      mode === 'actresses' ? loadActresses() : Promise.resolve(),
+      loadGenres(),
+    ]);
     await loadPage(true);
   }
 
@@ -65,17 +68,28 @@ export function createWatchView(state) {
       view.actresses = [];
     }
     renderActresses();
+    updateHeader();
   }
 
   async function loadGenres() {
     try {
       view.genres = (await call('ListGenres', state.libraryId)) ?? [];
     } catch (error) {
-      // 类别读取失败不该阻断浏览，静默降级为「没有筛选器」即可。
       console.error('读取类别失败', error);
       view.genres = [];
     }
     renderFilters();
+  }
+
+  function buildFilter() {
+    return {
+      Actress: mode === 'actresses' ? view.activeActress : '',
+      Keyword: view.keyword,
+      Genres: [...view.selectedGenres],
+      FavoriteOnly: view.favoriteOnly,
+      IncludeMissing: false,
+      MinDurationMs: 0,
+    };
   }
 
   async function loadPage(reset) {
@@ -92,6 +106,7 @@ export function createWatchView(state) {
       view.items = reset ? page.items : view.items.concat(page.items);
       view.total = page.total;
       renderGrid(reset);
+      updateHeader();
     } catch (error) {
       reportError('查询视频失败', error);
     } finally {
@@ -100,61 +115,159 @@ export function createWatchView(state) {
     }
   }
 
-  function buildFilter() {
-    return {
-      Actress: view.activeActress,
-      Keyword: view.keyword,
-      Genres: [...view.selectedGenres],
-      FavoriteOnly: view.favoriteOnly,
-      IncludeMissing: false,
-      MinDurationMs: 0,
-    };
+  // ── 渲染 ───────────────────────────────────────────────────────────────
+
+  function updateHeader() {
+    clear(headerHost);
+    const lib = state.libraries.find((l) => l.id === state.libraryId);
+    const unavailable = lib && !lib.available;
+
+    headerHost.append(
+      pageHeader({
+        title: mode === 'actresses' ? '演员' : '全部影片',
+        sub: unavailable
+          ? `视频库不可访问：${lib?.root || ''}`
+          : mode === 'actresses'
+            ? `按演员浏览 · ${view.actresses.length} 位演员`
+            : `全部已索引视频 · 共 ${view.total} 条`,
+        actions: [
+          h('button', {
+            type: 'button',
+            class: 'btn secondary small',
+            onclick: () => reloadAll().catch((e) => reportError('刷新失败', e)),
+          }, [h('span', { class: 'ms', text: 'refresh' }), h('span', { text: '刷新' })]),
+          mode === 'actresses'
+            ? h('button', {
+              type: 'button',
+              class: `btn small${view.showActors ? ' primary' : 'secondary'}`,
+              onclick: () => {
+                view.showActors = !view.showActors;
+                body.classList.toggle('hide-actors', !view.showActors);
+                updateHeader();
+              },
+            }, [h('span', { class: 'ms', text: 'people' }), h('span', { text: view.showActors ? '隐藏演员栏' : '显示演员栏' })])
+            : null,
+        ].filter(Boolean),
+      }),
+    );
   }
 
-  // ── 渲染 ────────────────────────────────────────────────────────────────
-
-  function renderPlaceholder() {
-    clear(actressList);
+  function renderNoLibrary() {
+    clear(actorPanel);
     clear(grid);
     clear(moreBar);
-    grid.append(
-      h('div', { class: 'empty' }, [
-        '还没有添加视频库。',
-        h('br'),
-        '到「刮削」页添加一个库根目录（结构应为 ',
-        h('code', { text: '演员名/视频文件.mp4' }),
-        '）。',
-      ]),
-    );
+    clear(filters);
+    body.classList.add('hide-actors');
+    updateHeader();
+    grid.append(emptyState({
+      icon: 'video_library',
+      title: '还没有添加视频库',
+      desc: '添加一个目录，结构为 演员名/视频文件.mp4，即可开始浏览与播放。',
+      hint: 'D:\\Videos\\Library\\<演员>\\<视频>.mp4',
+      actions: [
+        {
+          label: '添加视频库',
+          primary: true,
+          icon: 'folder_open',
+          onClick: () => {
+            document.getElementById('add-library')?.click();
+          },
+        },
+      ],
+    }));
+  }
+
+  function renderLibraryOffline(lib) {
+    clear(actorPanel);
+    clear(filters);
+    clear(moreBar);
+    body.classList.add('hide-actors');
+    updateHeader();
+    clear(grid);
+    grid.append(emptyState({
+      icon: 'hard_drive',
+      title: '视频库不可用',
+      desc: '硬盘可能未连接，或目录已被移动。索引与收藏/评分/进度仍保留。',
+      hint: lib?.root || '',
+      actions: [
+        {
+          label: '打开视频库管理',
+          primary: true,
+          icon: 'video_library',
+          onClick: () => {
+            location.hash = '#settings-library';
+            // 通过自定义事件让 main 路由
+            window.dispatchEvent(new CustomEvent('cinevault:navigate', { detail: 'settings-library' }));
+          },
+        },
+        {
+          label: '重试',
+          icon: 'refresh',
+          onClick: () => reloadAll().catch(() => {}),
+        },
+      ],
+    }));
   }
 
   function renderActresses() {
-    clear(actressList);
-    const total = view.actresses.reduce((sum, item) => sum + item.total, 0);
+    clear(actorPanel);
+    if (mode !== 'actresses') {
+      body.classList.add('hide-actors');
+      return;
+    }
+    body.classList.toggle('hide-actors', !view.showActors);
 
-    actressList.append(
-      h('div', {
-        class: `actress-item${view.activeActress === '' ? ' active' : ''}`,
+    const list = h('div', { class: 'actor-list' });
+    list.append(
+      h('button', {
+        type: 'button',
+        class: `actor-item${view.activeActress === '' ? ' active' : ''}`,
         onclick: () => selectActress(''),
       }, [
-        h('span', { text: '全部' }),
-        h('span', { class: 'count', text: String(total) }),
+        h('span', { class: 'actor-name', text: '全部演员' }),
+        h('span', { class: 'actor-count', text: `${view.actresses.length}位` }),
       ]),
     );
+    list.append(h('div', { class: 'actor-divider' }));
 
     for (const item of view.actresses) {
-      const label = item.missing > 0 ? `${item.actress} ⚠` : item.actress;
-      actressList.append(
-        h('div', {
-          class: `actress-item${view.activeActress === item.actress ? ' active' : ''}`,
+      list.append(
+        h('button', {
+          type: 'button',
+          class: `actor-item${view.activeActress === item.actress ? ' active' : ''}`,
           title: item.missing > 0 ? `有 ${item.missing} 个文件不在磁盘上` : '',
           onclick: () => selectActress(item.actress),
         }, [
-          h('span', { text: label }),
-          h('span', { class: 'count', text: String(item.total) }),
+          h('span', { class: 'actor-name', text: item.actress }),
+          h('span', { style: 'display:flex;align-items:center;gap:6px;flex-shrink:0' }, [
+            item.missing > 0
+              ? h('span', { class: 'warn-dot', title: '有缺失文件', style: 'width:8px;height:8px;border-radius:50%;background:var(--warn)' })
+              : null,
+            h('span', { class: 'actor-count', text: `${item.total}部` }),
+          ]),
         ]),
       );
     }
+
+    const search = h('input', { class: 'field', type: 'search', placeholder: '搜索演员…' });
+    search.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      list.querySelectorAll('.actor-item').forEach((btn, index) => {
+        if (index === 0) return;
+        const name = btn.querySelector('.actor-name')?.textContent?.toLowerCase() ?? '';
+        btn.classList.toggle('hidden', Boolean(q) && !name.includes(q));
+      });
+    });
+
+    actorPanel.append(
+      h('div', { class: 'actor-panel-head' }, [
+        h('div', { class: 'search-field' }, [
+          h('span', { class: 'ms', text: 'search' }),
+          search,
+        ]),
+      ]),
+      list,
+    );
   }
 
   function renderFilters() {
@@ -178,43 +291,37 @@ export function createWatchView(state) {
     });
     filters.append(keyword);
 
-    for (const genre of view.genres.slice(0, 24)) {
-      filters.append(
-        h('button', {
-          type: 'button',
-          class: `genre-chip${view.selectedGenres.has(genre) ? ' active' : ''}`,
-          text: genre,
-          onclick: () => {
-            if (view.selectedGenres.has(genre)) view.selectedGenres.delete(genre);
-            else view.selectedGenres.add(genre);
-            view.page = 1;
-            renderFilters();
-            loadPage(true);
-          },
-        }),
-      );
-    }
-
-    filters.append(h('span', { class: 'spacer' }));
-
-    filters.append(
-      h('button', {
+    for (const genre of view.genres.slice(0, 20)) {
+      filters.append(h('button', {
         type: 'button',
-        class: `btn small${view.favoriteOnly ? ' primary' : ''}`,
-        text: '仅收藏',
+        class: `chip${view.selectedGenres.has(genre) ? ' active' : ''}`,
+        text: genre,
         onclick: () => {
-          view.favoriteOnly = !view.favoriteOnly;
+          if (view.selectedGenres.has(genre)) view.selectedGenres.delete(genre);
+          else view.selectedGenres.add(genre);
           view.page = 1;
           renderFilters();
           loadPage(true);
         },
-      }),
-    );
+      }));
+    }
 
-    const sortSelect = h('select', { class: 'field' }, [
+    filters.append(h('span', { class: 'spacer' }));
+    filters.append(h('button', {
+      type: 'button',
+      class: `btn small${view.favoriteOnly ? ' primary' : 'secondary'}`,
+      onclick: () => {
+        view.favoriteOnly = !view.favoriteOnly;
+        view.page = 1;
+        renderFilters();
+        loadPage(true);
+      },
+    }, [h('span', { class: `ms${view.favoriteOnly ? ' fill' : ''}`, text: 'favorite' }), h('span', { text: '仅收藏' })]));
+
+    const sortSelect = h('select', { class: 'select' }, [
       h('option', { value: 'release_date', text: '按发布时间' }),
       h('option', { value: 'file_size', text: '按文件大小' }),
-      h('option', { value: 'duration_ms', text: '按时长' }),
+      h('option', { value: 'duration_ms', text: '按真实时长' }),
       h('option', { value: 'title', text: '按标题' }),
       h('option', { value: 'fanha', text: '按番号' }),
       h('option', { value: 'actress', text: '按演员' }),
@@ -228,19 +335,17 @@ export function createWatchView(state) {
     });
     filters.append(sortSelect);
 
-    filters.append(
-      h('button', {
-        type: 'button',
-        class: 'btn small',
-        text: view.desc ? '降序 ↓' : '升序 ↑',
-        onclick: () => {
-          view.desc = !view.desc;
-          view.page = 1;
-          renderFilters();
-          loadPage(true);
-        },
-      }),
-    );
+    filters.append(h('button', {
+      type: 'button',
+      class: 'btn small secondary',
+      text: view.desc ? '降序' : '升序',
+      onclick: () => {
+        view.desc = !view.desc;
+        view.page = 1;
+        renderFilters();
+        loadPage(true);
+      },
+    }));
 
     filters.append(h('span', { class: 'count-label', text: `共 ${view.total} 条` }));
   }
@@ -250,265 +355,64 @@ export function createWatchView(state) {
     clear(moreBar);
 
     if (!view.items.length) {
-      grid.append(
-        h('div', { class: 'empty' }, [
-          '没有符合条件的视频。',
-          h('br'),
-          '如果刚添加了库，请到「刮削」页执行一次扫描与导入。',
-        ]),
-      );
+      grid.append(emptyState({
+        icon: view.keyword || view.favoriteOnly || view.selectedGenres.size ? 'search_off' : 'movie',
+        title: view.keyword || view.favoriteOnly || view.selectedGenres.size
+          ? '没有符合条件的视频'
+          : '索引中还没有视频',
+        desc: view.keyword || view.favoriteOnly || view.selectedGenres.size
+          ? '试着放宽筛选条件，或清除搜索词。'
+          : '如果刚添加了库，请到「扫描与待处理」执行扫描与导入。',
+        actions: [
+          {
+            label: '去扫描入库',
+            primary: true,
+            icon: 'manage_search',
+            onClick: () => window.dispatchEvent(new CustomEvent('cinevault:navigate', { detail: 'scan' })),
+          },
+        ],
+      }));
       return;
     }
 
     for (const item of view.items) {
-      grid.append(buildCard(item));
+      grid.append(videoCard(item, {
+        onOpen: (cardItem) => {
+          cardItem.onFavoriteChange = async () => {
+            await loadPage(true);
+          };
+          detail.open(cardItem);
+        },
+        onPlay: (cardItem) => {
+          cardItem.onFavoriteChange = async () => {
+            await loadPage(true);
+          };
+          detail.open(cardItem);
+          // 自动播放
+          setTimeout(() => {
+            document.querySelector('.overlay .player')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          }, 50);
+        },
+      }));
     }
-  }
-
-  function buildCard(item) {
-    const thumb = item.coverUrl
-      ? h('img', {
-        class: 'thumb',
-        src: item.coverUrl,
-        alt: `${item.fanha} 封面`,
-        loading: 'lazy',
-        onerror: (event) => { event.target.style.visibility = 'hidden'; },
-      })
-      : h('div', { class: 'thumb' });
-
-    const sub = [
-      item.releaseDate || '-',
-      formatSize(item.fileSize),
-      item.durationMs > 0 ? formatDuration(item.durationMs) : '',
-    ].filter(Boolean).join(' · ');
-
-    return h('div', { class: 'card', onclick: () => openDetail(item) }, [
-      thumb,
-      h('div', { class: 'meta' }, [
-        h('div', { class: 'fanha' }, [
-          item.fanha,
-          item.favorite ? h('span', { class: 'badge', text: ' ★ 收藏' }) : null,
-          item.missing ? h('span', { class: 'badge danger', text: ' 文件缺失' }) : null,
-        ]),
-        h('div', { class: 'title', text: item.title || '（无标题）' }),
-        h('div', { class: 'sub', text: sub }),
-      ]),
-    ]);
   }
 
   function renderMoreBar() {
     clear(moreBar);
     if (view.loading) {
-      moreBar.append(h('span', { class: 'status', text: '加载中…' }));
+      moreBar.append(h('span', { class: 'count-label', text: '加载中…' }));
       return;
     }
     if (view.items.length >= view.total) return;
-
-    moreBar.append(
-      h('button', {
-        type: 'button',
-        class: 'btn',
-        text: `加载更多（已显示 ${view.items.length} / ${view.total}）`,
-        onclick: () => {
-          view.page += 1;
-          loadPage(false);
-        },
-      }),
-    );
-  }
-
-  // ── 详情 ────────────────────────────────────────────────────────────────
-
-  function openDetail(item) {
-    closeDetail();
-
-    const player = item.playable && item.videoUrl
-      ? h('div', {
-        class: 'player',
-        onclick: (event) => startPlay(event.currentTarget, item),
-      }, [
-        h('img', {
-          src: item.coverUrl,
-          alt: `${item.fanha} 封面`,
-          onerror: (e) => { e.target.style.visibility = 'hidden'; },
-        }),
-        h('div', { class: 'play-mask', text: '▶' }),
-      ])
-      : h('img', {
-        class: 'detail-cover',
-        src: item.coverUrl,
-        alt: `${item.fanha} 封面`,
-        onerror: (e) => { e.target.style.visibility = 'hidden'; },
-      });
-
-    const resumeHint = item.watchPositionMs > 0
-      ? `（上次看到 ${formatPosition(item.watchPositionMs)}）`
-      : '';
-
-    const actions = [
-      h('button', {
-        type: 'button',
-        class: 'btn',
-        text: item.favorite ? '★ 已收藏' : '☆ 收藏',
-        onclick: async (event) => {
-          try {
-            const favorite = await call('ToggleFavorite', state.libraryId, item.id);
-            item.favorite = favorite;
-            event.currentTarget.textContent = favorite ? '★ 已收藏' : '☆ 收藏';
-            await loadActresses();
-          } catch (error) {
-            reportError('切换收藏失败', error);
-          }
-        },
-      }),
-      h('button', {
-        type: 'button',
-        class: 'btn',
-        text: `用外部播放器打开${resumeHint}`,
-        onclick: async () => {
-          try {
-            await call('OpenInPlayer', state.libraryId, item.id, true);
-            toast('已交给外部播放器');
-          } catch (error) {
-            reportError('打开外部播放器失败', error);
-          }
-        },
-      }),
-    ];
-
-    const rows = [
-      ['番号', item.fanha],
-      ['发布时间', formatDate(item.releaseDate)],
-      ['文件时长', formatDuration(item.durationMs)],
-      ['站点标注', item.siteLengthMin ? `${item.siteLengthMin} 分钟` : '-'],
-      ['分辨率', item.width > 0 ? `${item.width}×${item.height}` : '-'],
-      ['编码', [item.vCodec, item.acodec].filter(Boolean).join(' / ') || '-'],
-      ['类别', joinOrDash(item.genres)],
-      ['演员', joinOrDash(item.cast)],
-      ['文件名', item.stem],
-      ['文件大小', formatSize(item.fileSize)],
-      ['刮削时间', item.scrapedAt || '-'],
-    ].map(([label, value]) => h('div', { class: 'detail-row' }, [
-      `${label}：`,
-      h('b', { text: String(value) }),
-    ]));
-
-    const shots = (item.shotUrls ?? []).map((url, index) => h('img', {
-      src: url,
-      alt: `截图 ${index + 1}`,
-      loading: 'lazy',
-      onerror: (e) => { e.target.style.visibility = 'hidden'; },
-      onclick: () => openLightbox(item.shotUrls, index),
+    moreBar.append(h('button', {
+      type: 'button',
+      class: 'btn secondary',
+      text: `加载更多（已显示 ${view.items.length} / ${view.total}）`,
+      onclick: () => {
+        view.page += 1;
+        loadPage(false);
+      },
     }));
-
-    const inner = h('div', { class: 'overlay-inner' }, [
-      player,
-      h('div', { class: 'detail-title', text: item.title || item.fanha }),
-      h('div', { class: 'detail-actions' }, actions),
-      item.missing
-        ? h('div', { class: 'detail-row' }, [
-          h('span', { class: 'badge danger', text: '文件已不在磁盘上' }),
-          ' 索引里仍有记录。重新扫描后该条目会消失。',
-        ])
-        : null,
-      h('div', { class: 'detail-rows' }, rows),
-      shots.length ? h('div', { class: 'shots' }, shots) : null,
-    ]);
-
-    overlay = h('div', {
-      class: 'overlay',
-      onclick: (event) => { if (event.target === overlay) closeDetail(); },
-    }, [
-      h('button', {
-        type: 'button',
-        class: 'overlay-close',
-        text: '×',
-        onclick: closeDetail,
-      }),
-      inner,
-    ]);
-
-    document.body.append(overlay);
-  }
-
-  function startPlay(container, item) {
-    const video = h('video', {
-      src: item.videoUrl,
-      controls: true,
-      autoplay: true,
-    });
-    video.style.width = '100%';
-    video.style.borderRadius = '8px';
-    video.style.background = '#000';
-    container.replaceWith(video);
-
-    if (item.watchPositionMs > 0) {
-      // 位置可能在可 seek 之前设置，等元数据就绪再跳。
-      video.addEventListener('loadedmetadata', () => {
-        if (item.watchPositionMs / 1000 < video.duration - 5) {
-          video.currentTime = item.watchPositionMs / 1000;
-        }
-      }, { once: true });
-    }
-
-    let lastSaved = 0;
-    const save = (force) => {
-      const positionMs = Math.round(video.currentTime * 1000);
-      if (!force && performance.now() - lastSaved < PROGRESS_SAVE_INTERVAL_MS) return;
-      lastSaved = performance.now();
-      call('SaveProgress', state.libraryId, item.id, positionMs).catch((error) => {
-        console.error('保存播放进度失败', error);
-      });
-    };
-
-    video.addEventListener('timeupdate', () => save(false));
-    video.addEventListener('pause', () => save(true));
-    video.addEventListener('ended', () => save(true));
-  }
-
-  function closeDetail() {
-    if (!overlay) return;
-    overlay.querySelectorAll('video').forEach((video) => {
-      video.pause();
-      video.removeAttribute('src');
-      video.load();
-    });
-    overlay.remove();
-    overlay = null;
-    closeLightbox();
-  }
-
-  // ── 截图放大 ────────────────────────────────────────────────────────────
-
-  let shots = [];
-  let position = 0;
-
-  function openLightbox(list, index) {
-    shots = list ?? [];
-    position = index;
-    closeLightbox();
-
-    lightbox = h('div', {
-      class: 'lightbox',
-      onclick: (event) => { if (event.target === lightbox) closeLightbox(); },
-    }, [
-      h('button', { type: 'button', class: 'nav prev', text: '‹', onclick: () => move(-1) }),
-      h('img', { id: 'lightbox-img', src: shots[position], alt: '截图' }),
-      h('button', { type: 'button', class: 'nav next', text: '›', onclick: () => move(1) }),
-    ]);
-    document.body.append(lightbox);
-  }
-
-  function move(step) {
-    if (!shots.length) return;
-    position = (position + step + shots.length) % shots.length;
-    const img = document.getElementById('lightbox-img');
-    if (img) img.src = shots[position];
-  }
-
-  function closeLightbox() {
-    lightbox?.remove();
-    lightbox = null;
   }
 
   function selectActress(name) {
@@ -518,24 +422,28 @@ export function createWatchView(state) {
     loadPage(true);
   }
 
-  document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    if (lightbox) closeLightbox();
-    else if (overlay) closeDetail();
-  });
-
   return {
-    el,
+    el: root,
     async onActivate() {
-      // 切回观影页时刷新演员计数：刮削刚刚可能改变了数据。
       if (!state.libraryId) {
-        renderPlaceholder();
+        renderNoLibrary();
         return;
       }
+      const lib = state.libraries.find((l) => l.id === state.libraryId);
+      if (lib && !lib.available) {
+        renderLibraryOffline(lib);
+        return;
+      }
+      if (state.keyword && state.keyword !== view.keyword) {
+        view.keyword = state.keyword;
+      }
       await loadActresses();
+      await loadGenres();
+      renderFilters();
       await loadPage(true);
     },
     async onLibraryChange() {
+      detail.close();
       await reloadAll();
     },
   };

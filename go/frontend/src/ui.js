@@ -31,19 +31,32 @@ export function clear(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
 
-let toastTimer = null;
+const TOAST_ICONS = {
+  info: 'info',
+  error: 'error',
+  warn: 'warning',
+  ok: 'check_circle',
+};
 
+/** 多条 toast 叠加显示；error 停留更久。 */
 export function toast(message, kind = 'info') {
-  const el = document.getElementById('toast');
-  if (!el) return;
-  el.textContent = message;
-  el.classList.remove('hidden');
-  el.classList.toggle('error', kind === 'error');
-  window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(
-    () => el.classList.add('hidden'),
-    kind === 'error' ? 8000 : 3000,
-  );
+  const host = document.getElementById('toast-host');
+  if (!host) return;
+
+  const iconName = TOAST_ICONS[kind] || TOAST_ICONS.info;
+  const el = h('div', { class: `toast ${kind}` }, [
+    h('span', { class: 'ms', text: iconName }),
+    h('span', { text: message }),
+  ]);
+
+  // 最多同时 4 条
+  while (host.children.length >= 4) host.firstChild.remove();
+
+  host.append(el);
+  const ms = kind === 'error' ? 8000 : 3200;
+  window.setTimeout(() => {
+    el.remove();
+  }, ms);
 }
 
 /**
@@ -58,8 +71,31 @@ export function reportError(context, error) {
   toast(`${context}：${message}`, 'error');
 }
 
-/** 设置顶栏状态文字。空字符串表示清除。 */
+/** 设置侧栏状态文字（兼容旧 API）。空字符串表示清除。 */
 export function setStatus(text) {
   const el = document.getElementById('status');
   if (el) el.textContent = text ?? '';
+}
+
+/** 全局忙碌条：长任务期间打开。 */
+export function setBusy(on) {
+  const bar = document.getElementById('busy-bar');
+  if (!bar) return;
+  bar.classList.toggle('on', Boolean(on));
+}
+
+/** 可选中的库路径展示。 */
+export function setLibraryPathHint(root) {
+  const el = document.getElementById('library-path');
+  if (el) el.textContent = root || '—';
+}
+
+/** 侧栏刮削器状态：ready | unknown | error */
+export function setScraperStatus(kind, text) {
+  const el = document.getElementById('scraper-status');
+  const label = document.getElementById('scraper-status-text');
+  if (!el || !label) return;
+  el.classList.remove('ready', 'unknown', 'error');
+  el.classList.add(kind);
+  label.textContent = text;
 }

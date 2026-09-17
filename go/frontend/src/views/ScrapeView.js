@@ -1,6 +1,37 @@
 import { call, on } from '../api.js';
-import { clear, h, reportError, setStatus, toast } from '../ui.js';
+import { clear, h, reportError, setBusy, setStatus, toast } from '../ui.js';
 import { formatSize } from '../format.js';
+import { emptyState, pageHeader } from '../components/shell.js';
+
+/** 把本地刮削状态镜像到全局 taskMonitor，供任务监控页读取。 */
+function syncMonitor(state, local) {
+  if (!state.taskMonitor) {
+    state.taskMonitor = {
+      running: false,
+      total: 0,
+      done: 0,
+      ok: 0,
+      failed: 0,
+      skipped: 0,
+      canceled: false,
+      finished: false,
+      fatal: '',
+      fatalMessage: '',
+      results: [],
+      log: [],
+    };
+  }
+  Object.assign(state.taskMonitor, {
+    running: local.running,
+    total: local.total,
+    done: local.done,
+    ok: local.ok,
+    failed: local.failed,
+    skipped: local.skipped,
+    results: local.results,
+  });
+  state.taskMonitorSync?.();
+}
 
 const STAGE_TEXT = {
   search: '搜索',
@@ -15,7 +46,9 @@ export function createScrapeView(state) {
   const tableWrap = h('div', { class: 'table-wrap' }, [table]);
   const progressPanel = h('div', { class: 'progress-panel' });
   const body = h('div', { class: 'scrape-body' }, [tableWrap, progressPanel]);
-  const el = h('div', { class: 'scrape-main' }, [bar, body]);
+  const scrapeMain = h('div', { class: 'scrape-main' }, [bar, body]);
+  const headerHost = h('div');
+  const el = h('div', { class: 'page', dataset: { view: 'scan' } }, [headerHost, scrapeMain]);
 
   const view = {
     candidates: [],
@@ -44,6 +77,7 @@ export function createScrapeView(state) {
     entry.stage = payload.stage;
     entry.percent = payload.percent;
     entry.status = 'running';
+    syncMonitor();
     renderProgress();
   });
 
@@ -58,6 +92,7 @@ export function createScrapeView(state) {
     }
     view.ok += 1;
     view.done += 1;
+    syncMonitor(state, view);
     renderProgress();
   });
 
@@ -69,12 +104,21 @@ export function createScrapeView(state) {
     entry.reason = payload.reason;
     view.failed += 1;
     view.done += 1;
+    syncMonitor(state, view);
     renderProgress();
   });
 
   on('scrape:finished', (payload) => {
     view.running = false;
     view.skipped = payload.skipped ?? 0;
+    if (state.taskMonitor) {
+      state.taskMonitor.finished = true;
+      state.taskMonitor.canceled = Boolean(payload.canceled);
+      state.taskMonitor.fatal = payload.fatal || '';
+      state.taskMonitor.fatalMessage = payload.fatalMessage || payload.error || '';
+    }
+    syncMonitor(state, view);
+    setBusy(false);
     if (payload.fatalMessage) {
       toast(payload.fatalMessage, 'error');
     } else if (payload.error) {
@@ -207,6 +251,8 @@ export function createScrapeView(state) {
     view.failed = 0;
     view.skipped = 0;
     view.results = [];
+    syncMonitor(state, view);
+    setBusy(true);
     renderAll();
 
     try {
@@ -246,16 +292,37 @@ export function createScrapeView(state) {
   }
 
   function renderAll() {
+    renderHeader();
     renderBar();
     renderTable();
     renderProgress();
+  }
+
+  function renderHeader() {
+    clear(headerHost);
+    headerHost.append(pageHeader({
+      title: '扫描与待处理',
+      sub: view.running ? `刮削进行中 ${view.done}/${view.total}` : '扫描磁盘候选、勾选后开始刮削',
+      actions: [
+        h('button', {
+          type: 'button',
+          class: 'btn secondary small',
+          onclick: () => window.dispatchEvent(new CustomEvent('cinevault:navigate', { detail: 'tasks' })),
+        }, [h('span', { class: 'ms', text: 'dns' }), h('span', { text: '任务监控' })]),
+      ],
+    }));
   }
 
   function renderBar() {
     clear(bar);
 
     if (!state.libraryId) {
-      bar.append(h('span', { class: 'status', text: '请先添加一个视频库' }));
+      bar.append(h('span', { class: 'badge missing-art', text: '尚未添加视频库' }));
+      bar.append(h('button', {
+        type: 'button',
+        class: 'btn primary small',
+        onclick: () => window.dispatchEvent(new CustomEvent('cinevault:navigate', { detail: 'settings-library' })),
+      }, [h('span', { class: 'ms', text: 'video_library' }), h('span', { text: '去添加' })]));
       return;
     }
 
@@ -308,16 +375,16 @@ export function createScrapeView(state) {
     );
 
     if (view.healthError) {
-      bar.append(h('span', { class: 'badge danger', text: '刮削器不可用' }));
+      bar.append(h('span', { class: 'badge broken', text: '刮削器不可用' }));
     } else if (view.health?.chrome?.found === false) {
-      bar.append(h('span', { class: 'badge danger', text: '缺少 Chrome' }));
+      bar.append(h('span', { class: 'badge broken', text: '缺少 Chrome' }));
     } else if (view.health?.driver?.ready !== true) {
       // 驱动未就绪是正常状态（首次刮削时 seleniumbase 会自己下载），只有
       // 「落地目录不可写」才需要用户处理 —— 那通常意味着产物装在受保护位置，
       // 且重定向没能生效。把目录和可写性一起放进 tooltip，出问题时一眼能判断。
       const driver = view.health?.driver ?? {};
       bar.append(h('span', {
-        class: driver.writable ? 'badge warn' : 'badge danger',
+        class: driver.writable ? 'badge missing-art' : 'badge broken',
         title: `驱动目录：${driver.dir || '未知'}（可写：${driver.writable ? '是' : '否'}）`,
         text: driver.writable ? '驱动将在首次刮削时下载' : '驱动目录不可写',
       }));
@@ -341,10 +408,25 @@ export function createScrapeView(state) {
     clear(table);
 
     if (!state.libraryId) {
-      table.append(h('tbody', {}, [
-        h('tr', {}, [h('td', { class: 'empty', text: '请先在右上角添加一个视频库' })]),
-      ]));
+      clear(table);
+      tableWrap.replaceChildren(
+        emptyState({
+          icon: 'video_library',
+          title: '没有视频库可扫描',
+          desc: '先在「视频库管理」添加库根目录，再回到本页扫描。',
+          hint: 'D:\\Videos\\Library\\<演员>\\<视频>.mp4',
+          actions: [{
+            label: '打开视频库管理',
+            primary: true,
+            icon: 'settings',
+            onClick: () => window.dispatchEvent(new CustomEvent('cinevault:navigate', { detail: 'settings-library' })),
+          }],
+        }),
+      );
       return;
+    }
+    if (!table.parentElement) {
+      tableWrap.replaceChildren(table);
     }
 
     const rows = visibleCandidates();
@@ -412,9 +494,9 @@ export function createScrapeView(state) {
   }
 
   function statusBadge(item) {
-    if (!item.scraped) return h('span', { class: 'badge', text: '未刮削' });
-    if (item.missingArt) return h('span', { class: 'badge warn', text: '缺图' });
-    return h('span', { class: 'badge ok', text: '已刮削' });
+    if (!item.scraped) return h('span', { class: 'badge pending', text: '未刮削' });
+    if (item.missingArt) return h('span', { class: 'badge missing-art', text: '缺图' });
+    return h('span', { class: 'badge scraped', text: '已刮削' });
   }
 
   function ensureResult(fanha) {
@@ -422,6 +504,7 @@ export function createScrapeView(state) {
     if (!entry) {
       entry = { fanha, status: 'pending', message: '', percent: 0, stage: '' };
       view.results.push(entry);
+      syncMonitor(state, view);
     }
     return entry;
   }

@@ -1,0 +1,118 @@
+/* Design tokens — dual theme, shared metrics.
+   Dark Obsidian is default; Light Precision only swaps color vars.
+   Source of truth: stitch design system code.html (tokens only). */
+
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Dark Obsidian */
+  --bg: #14121d;
+  --titlebar-bg: #100e18;
+  --card: #1c1a27;
+  --surface: #242132;
+  --surface-hover: #2e2b3d;
+  --subtle: #2e2b3d;
+  --primary: #d0bcff;
+  --primary-hover: #e4d8ff;
+  --primary-container: #3e2a82;
+  --on-primary: #14121d;
+  --text: #e6e0f1;
+  --muted: #9e99aa;
+  --faint: #626070;
+  --border: #494454;
+  --border-strong: #353142;
+  --border-soft: #2b2738;
+  --input-bg: #14121d;
+
+  /* Semantic */
+  --ok: #10b981;
+  --ok-bg: rgba(16, 185, 129, 0.15);
+  --ok-border: rgba(16, 185, 129, 0.3);
+  --warn: #f59e0b;
+  --warn-bg: rgba(245, 158, 11, 0.15);
+  --warn-border: rgba(245, 158, 11, 0.3);
+  --danger: #ef4444;
+  --danger-bg: rgba(239, 68, 68, 0.15);
+  --danger-border: rgba(239, 68, 68, 0.3);
+  --info: #38bdf8;
+  --info-bg: rgba(56, 189, 248, 0.15);
+  --info-border: rgba(56, 189, 248, 0.3);
+
+  /* Elevation / chrome */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.45);
+  --overlay: rgba(8, 6, 14, 0.72);
+  --scroll-track: #181622;
+  --scroll-thumb: #393548;
+  --scroll-thumb-hover: #534e65;
+
+  /* Metrics (shared across themes) */
+  --radius-control: 8px;
+  --radius-card: 10px;
+  --radius-panel: 12px;
+  --radius-pill: 999px;
+  --sidebar-w: 240px;
+  --titlebar-h: 40px;
+  --actor-panel-w: 220px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Type */
+  --font-title: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-title: 18px;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  /* Light Precision */
+  --bg: #faf8ff;
+  --titlebar-bg: #f1eff9;
+  --card: #ffffff;
+  --surface: #f1eff9;
+  --surface-hover: #e5e2f0;
+  --subtle: #e5e2f0;
+  --primary: #3525cd;
+  --primary-hover: #281ba6;
+  --primary-container: #e4e0ff;
+  --on-primary: #ffffff;
+  --text: #131b2e;
+  --muted: #626070;
+  --faint: #8a8798;
+  --border: #c7c4d8;
+  --border-strong: #d5d2e4;
+  --border-soft: #e5e2f0;
+  --input-bg: #ffffff;
+
+  --ok: #059669;
+  --ok-bg: #ecfdf5;
+  --ok-border: rgba(5, 150, 105, 0.3);
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --warn-border: rgba(217, 119, 6, 0.3);
+  --danger: #dc2626;
+  --danger-bg: #fef2f2;
+  --danger-border: rgba(220, 38, 38, 0.3);
+  --info: #0284c7;
+  --info-bg: #f0f9ff;
+  --info-border: rgba(2, 132, 199, 0.3);
+
+  --shadow-sm: 0 1px 2px rgba(19, 27, 46, 0.06);
+  --shadow-md: 0 6px 24px rgba(19, 27, 46, 0.1);
+  --overlay: rgba(19, 27, 46, 0.4);
+  --scroll-track: #f1eff9;
+  --scroll-thumb: #c7c4d8;
+  --scroll-thumb-hover: #a9a5c0;
+}

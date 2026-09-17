@@ -1,31 +1,84 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN" data-theme="dark">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>视频库</title>
-<link rel="stylesheet" href="./style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CineVault</title>
+  <link rel="stylesheet" href="./src/styles/app.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">视频库</div>
-    <nav class="nav">
-      <button type="button" class="nav-item active" data-view="watch">观影</button>
-      <button type="button" class="nav-item" data-view="scrape">刮削</button>
-    </nav>
-    <div class="topbar-right">
-      <select id="library-picker" class="library-picker" title="选择视频库"></select>
-      <button type="button" class="btn small" id="add-library">添加库</button>
-      <span class="status" id="status"></span>
+  <div id="app">
+    <!-- Window titlebar (Frameless + custom Windows controls) -->
+    <header class="titlebar" id="titlebar">
+      <div class="titlebar-left">
+        <div class="brand-block">
+          <span class="brand-mark">CV</span>
+          <span class="brand-name">CineVault</span>
+          <span class="brand-version mono" id="app-version">0.1.0</span>
+        </div>
+        <span class="titlebar-sep"></span>
+        <div class="library-select-wrap">
+          <span class="ms">folder_special</span>
+          <select id="library-picker" class="library-select" title="选择视频库">
+            <option value="">尚未添加视频库</option>
+          </select>
+        </div>
+        <button type="button" class="btn ghost small" id="add-library" title="添加视频库">
+          <span class="ms">add</span>
+          <span>添加库</span>
+        </button>
+      </div>
+
+      <div class="titlebar-center">
+        <div class="global-search">
+          <span class="ms">search</span>
+          <input id="global-search" type="search" placeholder="搜索番号、演员、片名…" autocomplete="off">
+          <kbd>Ctrl+K</kbd>
+        </div>
+      </div>
+
+      <div class="titlebar-right">
+        <button type="button" class="btn primary small" id="quick-scan" title="扫描当前视频库">
+          <span class="ms">sync</span>
+          <span>立即扫描</span>
+        </button>
+        <button type="button" class="btn ghost icon" id="theme-toggle" title="切换深浅主题">
+          <span class="ms" id="theme-toggle-icon">dark_mode</span>
+        </button>
+        <span class="titlebar-sep"></span>
+        <button type="button" class="win-ctl" id="win-min" title="最小化" aria-label="最小化">
+          <span class="ms">remove</span>
+        </button>
+        <button type="button" class="win-ctl" id="win-max" title="最大化" aria-label="最大化">
+          <span class="ms">crop_square</span>
+        </button>
+        <button type="button" class="win-ctl close" id="win-close" title="关闭" aria-label="关闭">
+          <span class="ms">close</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="shell-body">
+      <aside class="sidebar">
+        <nav class="sidebar-nav" id="sidebar-nav" aria-label="主导航"></nav>
+        <div class="sidebar-foot">
+          <div class="sidebar-foot-row">
+            <div class="sidebar-foot-status unknown" id="scraper-status">
+              <span class="pulse"></span>
+              <span id="scraper-status-text">刮削器未检测</span>
+            </div>
+            <span class="mono" style="font-size:10px;color:var(--faint)">Wails v2</span>
+          </div>
+          <div class="sidebar-foot-path" id="library-path">—</div>
+        </div>
+      </aside>
+
+      <main class="content-host" id="content-host"></main>
     </div>
-  </header>
+  </div>
 
-  <main>
-    <section class="view" id="view-watch"></section>
-    <section class="view hidden" id="view-scrape"></section>
-  </main>
-
-  <div class="toast hidden" id="toast"></div>
+  <div id="busy-bar" aria-hidden="true"></div>
+  <div id="toast-host" role="status" aria-live="polite"></div>
 
   <script type="module" src="./src/main.js"></script>
 </body>
