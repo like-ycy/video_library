@@ -1,6 +1,7 @@
-# 视频库 App 技术方案（Go + Wails / Python 刮削器）
+# 视频库 App 技术架构
 
-> 本文档定义一个全新项目的技术架构。该项目把现有的爬取能力保留在 Python，
+> 本文档定义当前确认的产品基线与技术边界。页面与功能清单见
+> [ui-pages-and-features.md](ui-pages-and-features.md)。项目把现有的爬取能力保留在 Python，
 > 其余逻辑全部用 Go 重写，并以 Wails 桌面 App 形态交付（不再依赖浏览器打开 HTML）。
 
 ---
@@ -11,7 +12,7 @@
 |---|--------|------|------|
 | D1 | 桌面框架 | **Go + Wails v2** | 体积小（<20MB）、用系统 WebView，无需打包 Chromium |
 | D2 | 刮削语言 | **Python 保留** | 核心难点是 Cloudflare + 验证码对抗，Go 生态无 `solve_captcha()` 等价能力 |
-| D3 | Python 交付形态 | **PyInstaller `--onedir` 打包为独立 exe** | 见 §9.1，不用 onefile |
+| D3 | Python 交付形态 | **PyInstaller `--onefile` 打包为独立 exe** | Release 只发布一个 scraper.exe；驱动缓存落到用户数据目录 |
 | D4 | Go ↔ Python 通信 | **子进程 + stdin/stdout NDJSON** | 不用 CGO（交叉编译会废）；不用本地 HTTP（要管端口与生命周期） |
 | D5 | Python 职责边界 | **只做「搜索 + 解析 + 下载图片」，不碰 JSON schema、不碰数据库、不碰 UI** | 单一职责，schema 演进只改 Go 一处 |
 | D6 | 数据真相来源 | **文件系统**（mp4 + 图片 + 边车 JSON） | 移动硬盘整目录可拷贝，自包含 |
@@ -20,6 +21,10 @@
 | D9 | DB 文件位置 | **`%APPDATA%\<app>\library-<卷标识>.db`** | 移动硬盘可能只读挂载／换盘符／热拔；WAL 附属文件是隐患 |
 | D10 | 视频供流 | **Wails 自定义 AssetServer + `http.ServeContent`** | 官方支持 Range，免费获得 206 / `If-Modified-Since`，替代 `preview_server.py` |
 | D11 | 目标平台 | **Windows x64 优先** | 与现状一致 |
+| D12 | 视频库布局 | **固定为 `<库根>/<演员>/<视频文件>`** | 演员目录是一级业务边界，暂不支持多级媒体目录 |
+| D13 | 同番号多版本 | **一个番号一个逻辑视频，多个文件作为版本** | 普通版、字幕版、4K 版共享元数据和用户状态 |
+| D14 | Release 资产 | **两个独立 exe** | `video-library.exe` 与 `scraper.exe` 可独立更新 |
+| D15 | 功能演进 | **分三期实施** | 第一期基础设置与观影；第二期版本与播放体验；第三期多站点、字幕、演员资料、更新 |
 
 ### 明确删除的遗留物
 
@@ -1054,7 +1059,7 @@ Python**（跑 hook、导入模块、读 `sys` 信息）来推断依赖。macOS 
 | 路径 | 说明 |
 |---|---|
 | Windows 机器直接打（推荐） | `tools\build-python.ps1` |
-| GitHub Actions `windows-latest` | 官方推荐做法。见 `.github/workflows/build-windows.yml` |
+| GitHub Actions `windows-latest` | 官方推荐做法。见 `.github/workflows/build.yml` |
 | Windows 虚拟机 | 官方推荐做法，但需装完整 Python 环境 |
 
 macOS 上跑 `tools/build-python.sh` 仍然有价值：它能验证**打包配置本身**是否成立
@@ -1062,7 +1067,7 @@ macOS 上跑 `tools/build-python.sh` 仍然有价值：它能验证**打包配�
 这些与目标平台无关。但产物只能在 macOS 上跑。
 
 ```bash
-pyinstaller --onedir --name scraper \
+pyinstaller --onefile --name scraper \
   --collect-data=seleniumbase \
   --add-binary "<site-packages>/seleniumbase/drivers/uc_driver;seleniumbase/drivers" \
   --hidden-import=seleniumbase \
@@ -1070,14 +1075,14 @@ pyinstaller --onedir --name scraper \
   src/scraper/__main__.py
 ```
 
-**为什么必须 `--onedir` 而不是 `--onefile`**
+**为什么 Release 使用 `--onefile`**
 
-| 问题 | onefile | onedir |
-|---|---|---|
-| seleniumbase 驱动缓存 | 每次启动解压到新 temp，版本检查失败 → **反复重新下载驱动** | 目录稳定，驱动只下一次 |
-| 启动耗时 | 每次解压，慢 2–5 秒 | 快 |
-| 杀软误报 | 单文件 + 拉起浏览器 + 自动下载 = Windows Defender 高危特征，常被直接删 | 显著降低 |
-| 排障 | 打包失败/缺资源极难定位 | 可直接看目录 |
+| 问题 | 对策 |
+|---|---|
+| 启动时解压 | 可接受，刮削任务本身远长于解压时间 |
+| 驱动缓存 | `driver_dir.py` 固定到 `%LOCALAPPDATA%/videolib/drivers`，不依赖临时目录 |
+| 杀软误报 | Release 提供校验值；若仍误报，后续再增加安装包签名 |
+| 排障 | `version`、`doctor` 输出协议、环境和实际驱动目录 |
 
 **驱动落地目录：必须重定向，见 §10 的 R13**
 
@@ -1126,18 +1131,16 @@ wails build -platform windows/amd64 -webview2 download -clean
 - `-webview2 download`：把 WebView2 引导程序打进安装包，覆盖未预装 WebView2 的机器
 - 需要 NSIS 生成安装器（可选）
 
-### 9.3 最终分发结构
+### 9.3 最终 Release 资产
 
 ```
-dist/VideoLib/
-├── VideoLib.exe                       # Go + Wails（含前端资源）
-├── tools/
-│   ├── ffprobe.exe
-│   └── scraper/
-│       ├── scraper.exe
-│       └── _internal/                 # PyInstaller onedir 载荷
-└── LICENSE / README
+Release v1.2.3/
+├── video-library.exe                  # Go + Wails（含前端资源）
+└── scraper.exe                        # Python 刮削器
 ```
+
+Release 上传两个独立文件。用户将它们放在同一目录，App 支持自动发现 scraper.exe，
+也支持在设置页手动选择路径。ffprobe 作为 App 配套运行时文件处理，不改变两个主资产的命名。
 
 **为什么不把 scraper embed 进 Go 二进制**
 
@@ -1262,7 +1265,7 @@ if (... getattr(sb_config.settings, "NEW_DRIVER_DIR", None)
 
 ---
 
-## 11. 里程碑
+## 11. 产品分期与里程碑
 
 按「最快看到可用产品」排序。
 
@@ -1274,7 +1277,9 @@ if (... getattr(sb_config.settings, "NEW_DRIVER_DIR", None)
 | **P3** | SQLite 索引 | `index` 全部 | 「重建索引」幂等；搜索/筛选/排序可用；删库后能完整重建 |
 | **P4** | 刮削编排 | `scraper` runner + ScrapeView | 点开始有实时逐条进度；点取消后 `tasklist` 无残留 chrome.exe |
 | **P5** | 增强 | `probe` / `player` / `user_data` | 真实时长入库；外部播放器可跳转续播；收藏与进度持久 |
-| **P6** | 打包整合 | 打包脚本 + `dist/` | 在一台没装过开发环境的 Windows 上，安装后能扫描 → 刮削 → 观看全流程 |
+| **P6 / 第一期** | 设置与基础 Release | 设置页、双 exe Release、环境诊断、评分、继续观看、最近播放 | 用户下载两个 exe 后可配置并完成扫描 → 刮削 → 观看 |
+| **P7 / 第二期** | 多版本与播放体验 | 同番号多版本、播放列表、自动下一部、播放失败提示优化 | 同番号版本合并正确，播放状态稳定 |
+| **P8 / 第三期** | 扩展能力 | 多站点、字幕管理、演员资料、自动更新、安装包 | 扩展能力不破坏一期数据与协议 |
 
 **P0 是唯一的 go / no-go 关卡**。它不通，后续所有设计都需要重新评估（可能的退路：Python 改成
 长期驻留服务、或刮削改为在用户本地 Python 环境运行而非打包）。
@@ -1311,7 +1316,15 @@ if (... getattr(sb_config.settings, "NEW_DRIVER_DIR", None)
 - [ ] `media.Handler` 的 `safeJoin` 路径穿越校验
 - [ ] `bufio.Scanner.Buffer` 放大（协议行可能超 64KB）
 - [ ] `freeze_support()` 在 Python 入口顶部
-- [ ] PyInstaller `--onedir` + `--collect-data=seleniumbase` + `uc_driver` 一并打包
+- [ ] PyInstaller `--onefile` + `--collect-data=seleniumbase` + `uc_driver` 一并打包
+
+**产品约束**
+
+- [ ] 目录格式固定为 `<库根>/<演员>/<视频文件>`，演员名直接来自目录名
+- [ ] 同番号多个文件归并为一个逻辑视频，文件版本单独保存并可选择播放
+- [ ] 用户状态按逻辑番号保存，切换版本不丢失收藏、评分和播放进度
+- [ ] Release 发布 `video-library.exe` 与 `scraper.exe` 两个独立资产
+- [ ] 设置页提供 scraper、播放器、并发、超时和环境诊断
 
 **必须验证（Phase 0）**
 

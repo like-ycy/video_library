@@ -41,7 +41,7 @@ Go 侧不一样：Wails 的 Windows 后端是纯 Go（不含 cgo），所以
 `tools/build-go.sh windows/amd64` 在 macOS 上就能产出真正的 `PE32+ executable`。
 **两侧机制不同，别以为一个能交叉编译另一个也能。**
 
-不想切机器的话，用 `.github/workflows/build-windows.yml` 在 GitHub Actions 的
+不想切机器的话，用 `.github/workflows/build.yml` 在 GitHub Actions 的
 `windows-latest` 上构建（官方推荐做法），本地推送 tag 即可拿到产物。
 
 ## 打包顺序
