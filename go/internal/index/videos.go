@@ -120,6 +120,25 @@ const rowJoin = `
    AND ud.fanha      = v.fanha`
 
 // QueryVideos 按条件分页查询，返回记录与符合条件的总数。
+// queryRows 执行带 rowColumns 的查询并解析结果。
+func (s *Store) queryRows(ctx context.Context, query string, args ...any) ([]Row, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Row
+	for rows.Next() {
+		row, err := scanRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) QueryVideos(
 	ctx context.Context,
 	libID string,

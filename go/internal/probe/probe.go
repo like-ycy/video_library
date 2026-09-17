@@ -12,9 +12,10 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
+
+	"videolib/internal/toolpath"
 )
 
 // ErrNotAvailable 表示没有可用的 ffprobe。
@@ -54,6 +55,14 @@ func (p *Prober) Available() bool {
 	return p != nil && p.path != ""
 }
 
+// Path 返回实际使用的 ffprobe 可执行文件路径（可能为空）。
+func (p *Prober) Path() string {
+	if p == nil {
+		return ""
+	}
+	return p.path
+}
+
 // Probe 读取单个视频的媒体信息。
 func (p *Prober) Probe(ctx context.Context, videoPath string) (MediaInfo, error) {
 	if !p.Available() {
@@ -86,19 +95,33 @@ func (p *Prober) Probe(ctx context.Context, videoPath string) (MediaInfo, error)
 
 // Locate 定位 ffprobe。
 //
-// 顺序：显式配置 → 分发目录 tools/bin → PATH。
+// 顺序：显式配置 → 标准位置（见 internal/toolpath）→ 相对当前工作目录 → PATH。
+//
 // 随包分发的那份要优先于 PATH，否则结果会随用户装了哪个版本的 ffmpeg 而变。
+// 两种布局都要认：分发布局是 <App>/tools/ffprobe.exe，开发布局是
+// <repo>/tools/bin/ffprobe.exe。只认后者时，打包产物一律找不到 ffprobe ——
+// 而这只会表现为「时长与编码不显示」，不会报任何错，所以特别容易漏。
+//
+// 相对当前工作目录那一档予以保留：部分开发流程直接从仓库根启动进程。
+// 它排在可执行文件之后，因为由快捷方式启动的 App 工作目录并不是安装目录。
 func Locate(configured string) string {
 	if configured != "" {
 		return configured
 	}
-	name := "ffprobe"
-	if runtime.GOOS == "windows" {
-		name = "ffprobe.exe"
+	name := toolpath.Name("ffprobe")
+
+	for _, rel := range [][]string{
+		{"tools", name},
+		{"tools", "bin", name},
+	} {
+		if found := toolpath.Find(rel...); found != "" {
+			return found
+		}
 	}
+
 	candidates := []string{
+		filepath.Join("tools", name),
 		filepath.Join("tools", "bin", name),
-		filepath.Join("..", "tools", "bin", name),
 	}
 	for _, candidate := range candidates {
 		if abs, err := filepath.Abs(candidate); err == nil {

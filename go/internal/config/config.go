@@ -1,8 +1,13 @@
 // Package config 管理应用配置的读写。
 //
-// 配置放在用户配置目录（%APPDATA%\videolib 等）而不是移动硬盘上：
+// 配置放在本机用户目录而不是移动硬盘上：
 // 硬盘可能只读挂载、换盘符、热拔，把一个需要频繁写入的文件放在上面
 // 只是在给自己找故障。
+//
+// 路径策略：
+//   - Windows：%APPDATA%\videolib
+//   - 其它平台：~/.videolib（刻意不用 os.UserConfigDir 的
+//     ~/Library/Application Support，避免与系统应用数据混在一起）
 package config
 
 import (
@@ -13,12 +18,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
 const (
-	appDirName = "videolib"
-	fileName   = "config.json"
+	// Windows： %APPDATA%\videolib
+	// 其它平台：~/.videolib
+	appDirNameWindows = "videolib"
+	appDirNameDot     = ".videolib"
+	fileName          = "config.json"
 
 	// MinConcurrency / MaxConcurrency 限制同时运行的刮削任务数。
 	//
@@ -58,15 +67,35 @@ func Defaults() Config {
 
 // Dir 返回应用配置目录，不存在则创建。
 func Dir() (string, error) {
-	base, err := os.UserConfigDir()
+	base, name, err := configPaths()
 	if err != nil {
-		return "", fmt.Errorf("定位用户配置目录: %w", err)
+		return "", err
 	}
-	dir := filepath.Join(base, appDirName)
+	dir := filepath.Join(base, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("创建配置目录 %s: %w", dir, err)
 	}
 	return dir, nil
+}
+
+// configPaths 决定配置根目录与目录名。
+//
+// Windows 用 %APPDATA%\videolib；macOS/Linux 用 ~/.videolib，
+// 不走 os.UserConfigDir() —— 那在 macOS 上会落到
+// ~/Library/Application Support/videolib，和系统库混在一起，也难排查。
+func configPaths() (base, name string, err error) {
+	if runtime.GOOS == "windows" {
+		base, err = os.UserConfigDir()
+		if err != nil {
+			return "", "", fmt.Errorf("定位用户配置目录: %w", err)
+		}
+		return base, appDirNameWindows, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", fmt.Errorf("定位用户主目录: %w", err)
+	}
+	return home, appDirNameDot, nil
 }
 
 // Path 返回配置文件路径。

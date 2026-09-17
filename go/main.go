@@ -36,12 +36,14 @@ func main() {
 	}
 
 	err = wails.Run(&options.App{
-		Title:            "视频库",
-		Width:            1440,
-		Height:           920,
-		MinWidth:         1024,
-		MinHeight:        680,
-		BackgroundColour: &options.RGBA{R: 21, G: 21, B: 26, A: 1},
+		Title:     "CineVault",
+		Width:     1440,
+		Height:    920,
+		MinWidth:  1024,
+		MinHeight: 680,
+		// 自定义标题栏：最小化/最大化/关闭由前端调用 Wails runtime。
+		Frameless:        true,
+		BackgroundColour: &options.RGBA{R: 20, G: 18, B: 29, A: 1},
 		AssetServer: &assetserver.Options{
 			Assets: frontend,
 			// Wails 对 GET 请求先匹配 Assets，匹配不到（fs.ErrNotExist）才落到
