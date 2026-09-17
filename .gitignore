@@ -87,3 +87,9 @@ Thumbs.db
 
 # ── 日志 ──
 *.log
+
+# ── 本地测试与工具 ──
+**/*_test.go
+testdata/
+.serena/
+.workbuddy/
