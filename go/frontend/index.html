@@ -4,11 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CineVault</title>
+  <script>
+    // 尽早标记平台：macOS 用系统红绿灯，Windows/Linux 显示自绘窗口按钮。
+    // 包在 head、stylesheet 之前，避免 Mac 上闪出 Windows 按钮。
+    (function () {
+      var ua = navigator.userAgent;
+      var p = ua.indexOf('Mac') >= 0 ? 'darwin'
+        : ua.indexOf('Win') >= 0 ? 'windows' : 'linux';
+      document.documentElement.dataset.platform = p;
+    })();
+  </script>
   <link rel="stylesheet" href="./src/styles/app.css">
 </head>
 <body>
   <div id="app">
-    <!-- Window titlebar (Frameless + custom Windows controls) -->
+    <!-- Window titlebar: Mac 用系统红绿灯；Windows/Linux 用右侧自绘按钮 -->
     <header class="titlebar" id="titlebar">
       <div class="titlebar-left">
         <div class="brand-block">
@@ -45,16 +55,18 @@
         <button type="button" class="btn ghost icon" id="theme-toggle" title="切换深浅主题">
           <span class="ms" id="theme-toggle-icon">dark_mode</span>
         </button>
-        <span class="titlebar-sep"></span>
-        <button type="button" class="win-ctl" id="win-min" title="最小化" aria-label="最小化">
-          <span class="ms">remove</span>
-        </button>
-        <button type="button" class="win-ctl" id="win-max" title="最大化" aria-label="最大化">
-          <span class="ms">crop_square</span>
-        </button>
-        <button type="button" class="win-ctl close" id="win-close" title="关闭" aria-label="关闭">
-          <span class="ms">close</span>
-        </button>
+        <span class="titlebar-sep" data-win-only></span>
+        <div class="win-ctl-group" id="win-ctl-group">
+          <button type="button" class="win-ctl" id="win-min" title="最小化" aria-label="最小化">
+            <span class="ms">remove</span>
+          </button>
+          <button type="button" class="win-ctl" id="win-max" title="最大化" aria-label="最大化">
+            <span class="ms">crop_square</span>
+          </button>
+          <button type="button" class="win-ctl close" id="win-close" title="关闭" aria-label="关闭">
+            <span class="ms">close</span>
+          </button>
+        </div>
       </div>
     </header>
 

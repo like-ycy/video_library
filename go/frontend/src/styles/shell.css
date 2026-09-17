@@ -26,6 +26,26 @@
   gap: 10px;
 }
 
+/* macOS 原生红绿灯占位：TitleBarHiddenInset 时让开左上角控件区 */
+html[data-platform="darwin"] .titlebar {
+  padding-left: 78px;
+}
+
+.win-ctl-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
+html[data-platform="darwin"] .win-ctl-group,
+html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
+  display: none !important;
+}
+
+.win-ctl-group[hidden] {
+  display: none !important;
+}
+
 .titlebar-left,
 .titlebar-center,
 .titlebar-right {

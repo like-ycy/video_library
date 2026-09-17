@@ -21,23 +21,48 @@ const state = {
 
 // ── 窗口控制 ───────────────────────────────────────────────────────────
 
-function wireWindowControls() {
+// Wails runtime.Environment() 返回 GOOS；开发态浏览器打开时回退 UA。
+async function detectPlatform() {
+  try {
+    const env = await globalThis.runtime?.Environment?.();
+    if (env?.platform) return env.platform;
+  } catch {
+    /* browser preview / runtime not ready */
+  }
+  const ua = navigator.userAgent.toLowerCase();
+  if (ua.includes('mac')) return 'darwin';
+  if (ua.includes('win')) return 'windows';
+  return 'linux';
+}
+
+// macOS 用系统红绿灯（Go 侧 Frameless=false），隐藏自绘按钮；
+// Windows/Linux 用无边框 + 自绘按钮，API 为 Wails 英式拼写。
+async function initWindowChrome() {
+  const platform = await detectPlatform();
+  document.documentElement.dataset.platform = platform;
+
+  if (platform === 'darwin') {
+    document.getElementById('win-ctl-group')?.setAttribute('hidden', '');
+    return;
+  }
+
   const rt = globalThis.runtime;
   document.getElementById('win-min')?.addEventListener('click', () => {
-    rt?.WindowSetMinimise?.();
+    rt?.WindowMinimise?.();
   });
   document.getElementById('win-max')?.addEventListener('click', async () => {
     if (!rt) return;
     if (typeof rt.WindowIsMaximised === 'function') {
       const maximised = await rt.WindowIsMaximised();
       if (maximised) rt.WindowUnmaximise?.();
-      else rt.WindowSetMaximise?.();
+      else rt.WindowMaximise?.();
     } else {
       rt.WindowToggleMaximise?.();
     }
   });
   document.getElementById('win-close')?.addEventListener('click', () => {
-    call('Close').catch(() => rt?.Quit?.());
+    // App.Close 是资源清理，不是关窗；关窗用 runtime.Quit。
+    rt?.Quit?.();
   });
 }
 
@@ -310,7 +335,7 @@ function wireGlobalSearch() {
 async function boot() {
   // 主题优先从配置同步
   initTheme();
-  wireWindowControls();
+  await initWindowChrome();
   wireTheme();
   buildSidebar();
   wireGlobalSearch();

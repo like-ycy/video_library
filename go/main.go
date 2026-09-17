@@ -4,10 +4,12 @@ import (
 	"embed"
 	"io/fs"
 	"log"
+	"runtime"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
 
 	"videolib/internal/media"
 )
@@ -35,14 +37,12 @@ func main() {
 		log.Fatalf("加载前端资源：%v", err)
 	}
 
-	err = wails.Run(&options.App{
-		Title:     "CineVault",
-		Width:     1440,
-		Height:    920,
-		MinWidth:  1024,
-		MinHeight: 680,
-		// 自定义标题栏：最小化/最大化/关闭由前端调用 Wails runtime。
-		Frameless:        true,
+	opts := &options.App{
+		Title:            "CineVault",
+		Width:            1440,
+		Height:           920,
+		MinWidth:         1024,
+		MinHeight:        680,
 		BackgroundColour: &options.RGBA{R: 20, G: 18, B: 29, A: 1},
 		AssetServer: &assetserver.Options{
 			Assets: frontend,
@@ -54,7 +54,19 @@ func main() {
 		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,
 		Bind:       []any{app},
-	})
+	}
+
+	// macOS：用系统原生红绿灯（透明标题栏 + 内容铺满），避免无边框自绘按钮。
+	// Windows/Linux：无边框，关闭/最小化/最大化由前端调用 Wails runtime。
+	if runtime.GOOS == "darwin" {
+		opts.Mac = &mac.Options{
+			TitleBar: mac.TitleBarHiddenInset(),
+		}
+	} else {
+		opts.Frameless = true
+	}
+
+	err = wails.Run(opts)
 	if err != nil {
 		log.Fatalf("应用退出：%v", err)
 	}
