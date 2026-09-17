@@ -19,9 +19,20 @@ dist="$repo/dist/VideoLib"
 app="$repo/go/build/bin/VideoLib.app"
 scraper="$repo/tools/bin/scraper"
 
+# wails.json 的 name 是 "videolib"，outputfilename 是 "VideoLib"。
+# macOS 上 .app 目录名跟 name，可执行文件名跟 outputfilename，于是本机产物是
+# videolib.app/Contents/MacOS/VideoLib。分发目录与 CI 断言约定的是 VideoLib.app，
+# 这里在找不到精确路径时再兜底认一下任意 *.app，避免大小写敏感卷或路径检查踩坑。
 if [[ ! -d "$app" ]]; then
-    echo "未找到 $app，请先运行 tools/build-go.sh" >&2
-    exit 1
+    shopt -s nullglob
+    candidates=("$repo/go/build/bin/"*.app)
+    shopt -u nullglob
+    if [[ ${#candidates[@]} -eq 1 ]]; then
+        app="${candidates[0]}"
+    else
+        echo "未找到 $repo/go/build/bin/VideoLib.app，请先运行 tools/build-go.sh" >&2
+        exit 1
+    fi
 fi
 if [[ ! -e "$scraper" ]]; then
     echo "未找到 $scraper，请先运行 tools/build-python.sh" >&2
