@@ -413,6 +413,7 @@ def main(argv: list[str] | None = None) -> int:
     # 让它创建目录是个真实的问题 —— 用户只想看一眼环境，主目录里就多出一个目录。
     if args.command == "scrape":
         log.debug("驱动目录：%s", driver_dir.activate())
+        log.debug("下载目录：%s", driver_dir.redirect_downloads())
 
     if args.command == "scrape" and args.jobs_from != "-":
         log.error("暂不支持的 job 来源：%s（只支持 '-' 即 stdin）", args.jobs_from)

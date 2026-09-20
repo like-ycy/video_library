@@ -72,6 +72,12 @@ type Runner struct {
 	// Python 侧的 %LOCALAPPDATA% 之类的变量会缺失，驱动目录解析不出来。
 	Env []string
 
+	// WorkDir 是刮削器子进程的工作目录。
+	//
+	// 必须可写：seleniumbase 会在 CWD 下创建 downloaded_files/，
+	// 而 macOS 以 .app 启动时 CWD 往往是只读的 /。为空则继承父进程 CWD。
+	WorkDir string
+
 	// IdleTimeout 是「多久没有任何输出就认为卡死」。
 	//
 	// seleniumbase 遇到验证码可能长时间静默。没有看门狗的话 UI 会永远停在
@@ -110,6 +116,7 @@ func (r *Runner) Run(ctx context.Context, jobs []Job, cb Callbacks) (Result, err
 	// 用 exec.Command 而不是 exec.CommandContext：后者取消时只 Kill 直接
 	// 子进程，Chrome 会全部残留。取消由下面的 goroutine 交给 processTree 处理。
 	cmd := exec.Command(r.ExePath, r.args()...)
+	cmd.Dir = r.WorkDir
 	// Python 侧的编码与缓冲必须显式指定：
 	//   缺 PYTHONUNBUFFERED → 块缓冲，Go 长时间读不到事件（表现为进度卡住）
 	//   缺 PYTHONIOENCODING → 中文标题乱码
@@ -214,8 +221,8 @@ func (r *Runner) Inspect(ctx context.Context, subcommand string, target any) err
 	}
 
 	cmd := exec.CommandContext(ctx, r.ExePath, subcommand)
-	// 与 Run 保持一致地构造环境：只补必需项，其余继承父进程。
-	// 两者不一致会让"能跑 scrape 但跑不了 doctor"这类问题极难定位。
+	// 与 Run 保持一致：工作目录与环境都对齐，避免「scrape 能跑、doctor 不能跑」。
+	cmd.Dir = r.WorkDir
 	cmd.Env = append(os.Environ(), r.Env...)
 	cmd.Env = append(cmd.Env, "PYTHONIOENCODING=utf-8", "PYTHONUTF8=1")
 

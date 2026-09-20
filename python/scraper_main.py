@@ -11,6 +11,12 @@ from multiprocessing import freeze_support
 
 freeze_support()
 
+# seleniumbase 在 import 时按 CWD 固化 downloaded_files 路径。macOS .app
+# 启动时 CWD 往往是只读的 /，必须先切到可写目录再导入 cli / seleniumbase。
+from scraper.driver_dir import ensure_writable_cwd  # noqa: E402
+
+ensure_writable_cwd()
+
 from scraper.__main__ import main  # noqa: E402
 
 if __name__ == "__main__":

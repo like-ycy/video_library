@@ -27,6 +27,7 @@ const (
 	modeNoisy      = "noisy"
 	modeStubborn   = "stubborn"
 	modeChild      = "child"
+	modeCwd        = "cwd"
 )
 
 // TestMain 让同一个测试二进制兼作「假刮削器」。
@@ -87,6 +88,12 @@ func runFakeScraper(mode string) {
 			_ = os.WriteFile(path, []byte(strconv.Itoa(i)), 0o644)
 			time.Sleep(50 * time.Millisecond)
 		}
+
+	case modeCwd:
+		// 在子进程当前目录写探针文件，用来证明 Runner.WorkDir 生效。
+		_ = os.WriteFile("cwd-probe.txt", []byte("ok"), 0o644)
+		emitLine(`{"v":1,"type":"done","summary":{"ok":0,"failed":0,"skipped":0}}`)
+		os.Exit(0)
 
 	case modeOK:
 		jobs := readStdinJobs()
@@ -291,6 +298,24 @@ func TestRunFeedsJobsAndParsesEvents(t *testing.T) {
 	}
 	if len(rec.failed) != 1 || rec.failed[0].reason != ReasonNotFound {
 		t.Fatalf("item_failed 回调 = %+v", rec.failed)
+	}
+}
+
+func TestRunAppliesWorkDir(t *testing.T) {
+	// .app 启动时父进程 CWD 可能是只读的 /；子进程必须落到 WorkDir，
+	// 否则 seleniumbase 建 downloaded_files 会 Errno 30。
+	dir := testDir(t)
+	runner := fakeRunner(modeCwd)
+	runner.WorkDir = dir
+	rec := &recorder{}
+
+	if _, err := runner.Run(context.Background(), []Job{{Fanha: "x"}}, rec.callbacks()); err != nil {
+		t.Fatalf("Run 失败: %v", err)
+	}
+
+	probe := filepath.Join(dir, "cwd-probe.txt")
+	if _, err := os.Stat(probe); err != nil {
+		t.Fatalf("子进程未在 WorkDir %s 写探针文件: %v", dir, err)
 	}
 }
 

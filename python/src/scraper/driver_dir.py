@@ -95,6 +95,80 @@ def target() -> Path:
     return data_dir() / "drivers"
 
 
+def downloads_target() -> Path:
+    """返回我们希望的 seleniumbase 下载目录。
+
+    seleniumbase 默认写到 `os.path.abspath(".")/downloaded_files`。CWD 只读
+    （macOS .app 启动时往往是 `/`）会直接 OSError，装在受保护位置时同理。
+    """
+    return data_dir() / "downloaded_files"
+
+
+def _cwd_writable(path: Path) -> bool:
+    probe = path if path.exists() else path.parent
+    return os.access(probe, os.W_OK)
+
+
+def ensure_writable_cwd(*, create: bool = True) -> Path:
+    """保证进程 CWD 可写；必要时切到用户数据目录。
+
+    **必须在导入 seleniumbase 之前调用**：`download_helper` 在 import 时就把
+    下载目录固化成 `os.path.abspath(".")/downloaded_files`，之后 browser_launcher
+    会对它 `os.makedirs`。CWD 只读时症状是
+    `OSError: [Errno 30] Read-only file system: b'downloaded_files'`。
+
+    `create=False` 时不创建数据目录，留给 doctor 这类只读诊断使用。
+    """
+    cwd = Path.cwd()
+    if _cwd_writable(cwd):
+        return cwd
+
+    dest = data_dir()
+    if not dest.exists():
+        if not create:
+            return cwd
+        try:
+            dest.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            log.warning("无法创建数据目录 %s：%s，CWD 保持 %s", dest, exc, cwd)
+            return cwd
+    try:
+        os.chdir(dest)
+    except OSError as exc:
+        log.warning("无法切换工作目录到 %s：%s", dest, exc)
+        return cwd
+    return dest
+
+
+def redirect_downloads() -> Path | None:
+    """把 seleniumbase 的下载目录重定向到用户数据目录。
+
+    与驱动目录同类问题，但 seleniumbase **没有** override_driver_dir 那样的
+    公开入口，只能补丁已导入模块里的常量。必须在构造 `SB(...)` 之前调用；
+    再保险一层：即使 CWD 在 import 时不对，这里也会改掉已固化的路径。
+
+    doctor 刻意不调用：只读诊断不应创建目录。
+    """
+    destination = downloads_target()
+    try:
+        destination.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        log.warning("无法创建下载目录 %s：%s", destination, exc)
+        return None
+
+    try:
+        from seleniumbase.core import browser_launcher, download_helper
+    except ImportError as exc:
+        log.warning("无法导入 seleniumbase 下载路径模块（%s）", exc)
+        return None
+
+    path = str(destination)
+    download_helper.downloads_path = path
+    # browser_launcher 在 import 时就缓存了 get_downloads_folder() 的返回值。
+    browser_launcher.DOWNLOADS_FOLDER = path
+    return destination
+
+
 def fallback() -> Path | None:
     """返回 seleniumbase 的默认驱动目录，即重定向失败时会用的位置。"""
     try:

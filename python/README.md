@@ -89,6 +89,26 @@ DRIVER_DIR = os.path.dirname(os.path.realpath(drivers.__file__))
 创建目录只发生在 `scrape`（真正要用驱动时）。诊断命令不该有副作用 —— 否则用户
 只是想看一眼环境，主目录里就凭空多出一个目录。
 
+## 工作目录与下载目录
+
+seleniumbase 会在**进程 CWD** 下创建 `downloaded_files/`，并在 import 时就
+把路径固化成 `os.path.abspath(".")/downloaded_files`。macOS 以 `.app` 启动时
+CWD 往往是只读的 `/`，症状：
+
+```text
+OSError: [Errno 30] Read-only file system: b'downloaded_files'
+```
+
+处理分两层（与驱动目录同一类问题）：
+
+1. **入口 `ensure_writable_cwd()`**：在导入 seleniumbase 之前保证 CWD 可写，
+   不可写则切到用户数据目录（`~/.videolib`）。
+2. **`scrape` 时 `redirect_downloads()`**：把已导入模块里的下载路径补丁到
+   `data_dir()/downloaded_files`，作为第二道保险。
+
+Go 侧 `Runner.WorkDir` 也会把子进程工作目录设到应用数据目录，避免依赖
+父进程 CWD。
+
 ### 本地验证不要污染主目录
 
 验证驱动流程需要真的下载一次（约 35MB，耗时约 1 分钟）。用环境变量把数据目录

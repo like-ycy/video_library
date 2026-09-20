@@ -124,6 +124,13 @@ func (a *App) rebuildRunner() {
 	a.runner.ExePath = a.resolveScraperPath()
 	a.runner.Concurrency = a.cfg.Concurrency
 	a.runner.IdleTimeout = time.Duration(a.cfg.ScrapeTimeoutMin) * time.Minute
+	// 工作目录必须可写：seleniumbase 会在 CWD 下建 downloaded_files/，
+	// 而 macOS .app 启动时 CWD 通常是只读的 /。
+	if dir, err := config.Dir(); err == nil {
+		a.runner.WorkDir = dir
+	} else {
+		a.runner.WorkDir = os.TempDir()
+	}
 }
 
 // resolveScraperPath 定位刮削器可执行文件。
@@ -647,7 +654,7 @@ func (a *App) ScraperHealth() (scraper.Health, error) {
 	a.rebuildRunner()
 	if a.runner.ExePath == "" {
 		return scraper.Health{}, errors.New(
-			"未找到刮削器组件。请先运行 tools/build-python 完成打包，" +
+			"未找到刮削器组件。请先运行 tools/build.sh 完成打包，" +
 				"或在配置中指定 scraper_path")
 	}
 
