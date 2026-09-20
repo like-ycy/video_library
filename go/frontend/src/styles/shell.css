@@ -21,6 +21,8 @@
   padding: 0 0 0 10px;
   background: var(--titlebar-bg);
   border-bottom: 1px solid var(--border-soft);
+  /* Wails 用 --wails-draggable 触发 performWindowDrag；-webkit-app-region 在 WKWebView 上无效 */
+  --wails-draggable: drag;
   -webkit-app-region: drag;
   z-index: 50;
   gap: 10px;
@@ -63,6 +65,8 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
 .library-select-wrap,
 .btn,
 .win-ctl {
+  /* 自定义属性会继承：子控件必须显式 no-drag，否则点按钮也会拖窗 */
+  --wails-draggable: no-drag;
   -webkit-app-region: no-drag;
 }
 
@@ -223,6 +227,7 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
   width: 36px;
   height: var(--titlebar-h);
   color: var(--muted);
+  --wails-draggable: no-drag;
   -webkit-app-region: no-drag;
   transition: background 0.12s, color 0.12s;
 }
