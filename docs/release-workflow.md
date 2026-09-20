@@ -47,7 +47,7 @@ PyInstaller 有两种打包模式：
 | 副本 | 原因 | 对策 |
 |------|------|------|
 | 启动变慢（1-3 秒） | 每次启动解压内嵌文件到临时目录 | 可接受；刮削本身耗时远大于此 |
-| 驱动重复下载 | seleniumbase 默认去产物内部目录找驱动，临时目录每次不同 | `driver_dir.py` 已将驱动重定向到 `%LOCALAPPDATA%\videolib\drivers\`，与临时目录解耦 |
+| 驱动重复下载 | seleniumbase 默认去产物内部目录找驱动，临时目录每次不同 | `driver_dir.py` 已将驱动重定向到用户数据目录（Windows `%LOCALAPPDATA%\videolib\drivers\`，macOS/Linux `~/.videolib/drivers\`），与临时目录解耦 |
 | 杀软误报 | 单文件 + 拉起浏览器 + 联网是高危特征组合 | 驱动不在 exe 内部，特征已弱化；若仍被误杀，用户加白名单即可 |
 
 > **注意**：`scraper.spec` 顶部注释仍保留 onedir 时代的警告（"必须是 onedir，

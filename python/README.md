@@ -70,9 +70,11 @@ DRIVER_DIR = os.path.dirname(os.path.realpath(drivers.__file__))
 
 | 平台 | 目录 |
 |---|---|
-| Windows | `%LOCALAPPDATA%\videolib\drivers` |
-| macOS | `~/Library/Application Support/videolib/drivers` |
-| Linux | `$XDG_DATA_HOME/videolib/drivers` |
+| Windows | `%LOCALAPPDATA%\videolib\drivers`（缺省时回退 `%APPDATA%`） |
+| macOS | `~/.videolib/drivers` |
+| Linux | `~/.videolib/drivers` |
+
+与 Go 侧 `internal/config` 同一套路径策略：Windows 在 AppData 下，其它平台统一 `~/.videolib`，不用 `~/Library/Application Support`。
 
 走 seleniumbase 自己的入口（`override_driver_dir()` → `settings.NEW_DRIVER_DIR`），
 不硬改路径。两个硬约束：
@@ -90,7 +92,7 @@ DRIVER_DIR = os.path.dirname(os.path.realpath(drivers.__file__))
 ### 本地验证不要污染主目录
 
 验证驱动流程需要真的下载一次（约 35MB，耗时约 1 分钟）。用环境变量把数据目录
-指到项目内，就不会写到 `~/Library/Application Support` 或 `%LOCALAPPDATA%`：
+指到项目内，就不会写到 `~/.videolib` 或 `%LOCALAPPDATA%`：
 
 ```bash
 # PowerShell

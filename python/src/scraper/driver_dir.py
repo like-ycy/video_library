@@ -51,8 +51,10 @@ from pathlib import Path
 
 log = logging.getLogger("scraper")
 
-# 与 Go 侧的应用名保持一致，方便用户在一个地方找到应用的数据。
+# 与 go/internal/config 同一套路径策略，避免两套应用数据目录：
+# Windows 目录名不带点（AppData 下），macOS/Linux 用 ~/.videolib。
 _APP_DIR_NAME = "videolib"
+_APP_DIR_DOT = ".videolib"
 
 # 覆盖数据目录的环境变量名。
 #
@@ -68,25 +70,21 @@ def data_dir() -> Path:
 
     环境变量 `VIDEOLIB_DATA_DIR` 可整体覆盖，用于测试与本地验证。
 
-    否则按平台惯例选择位置。Windows 上刻意用 `%LOCALAPPDATA%` 而不是 `%APPDATA%`：
-    后者是漫游目录，在企业域环境下会被同步到服务器，把几 MB 的浏览器驱动放进
-    漫游配置里是错的。Go 侧的配置文件用 `%APPDATA%`（那才是配置该待的地方），
-    两者分开是刻意的，不是遗漏。
+    否则与 go/internal/config 同一套策略：
+    - Windows：%APPDATA%\\videolib（驱动优先 LOCALAPPDATA，缺失回退 APPDATA）
+    - macOS / Linux：~/.videolib（刻意不用 ~/Library/Application Support）
     """
     override = os.environ.get(_ENV_DATA_DIR)
     if override:
         return Path(override)
 
     if sys.platform == "win32":
+        # LOCALAPPDATA 优先：驱动是本机缓存，不该进漫游 APPDATA；缺失再回退。
         raw = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
         if raw:
             return Path(raw) / _APP_DIR_NAME
-    elif sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / _APP_DIR_NAME
     else:
-        raw = os.environ.get("XDG_DATA_HOME")
-        base = Path(raw) if raw else Path.home() / ".local" / "share"
-        return base / _APP_DIR_NAME
+        return Path.home() / _APP_DIR_DOT
 
     # 环境变量缺失（极少见）时退到临时目录：驱动能重新下载，不是不可替代的数据。
     return Path(tempfile.gettempdir()) / _APP_DIR_NAME

@@ -1080,7 +1080,7 @@ pyinstaller --onefile --name scraper \
 | 问题 | 对策 |
 |---|---|
 | 启动时解压 | 可接受，刮削任务本身远长于解压时间 |
-| 驱动缓存 | `driver_dir.py` 固定到 `%LOCALAPPDATA%/videolib/drivers`，不依赖临时目录 |
+| 驱动缓存 | `driver_dir.py` 固定到 `%LOCALAPPDATA%/videolib/drivers`（macOS/Linux 为 `~/.videolib/drivers`），不依赖临时目录 |
 | 杀软误报 | Release 提供校验值；若仍误报，后续再增加安装包签名 |
 | 排障 | `version`、`doctor` 输出协议、环境和实际驱动目录 |
 
@@ -1229,9 +1229,9 @@ DRIVER_DIR = os.path.dirname(os.path.realpath(drivers.__file__))
 
 | 平台 | 驱动目录 |
 |---|---|
-| Windows | `%LOCALAPPDATA%\videolib\drivers` |
-| macOS | `~/Library/Application Support/videolib/drivers` |
-| Linux | `$XDG_DATA_HOME/videolib/drivers`（缺省 `~/.local/share/...`） |
+| Windows | `%LOCALAPPDATA%\videolib\drivers`（缺省回退 `%APPDATA%`） |
+| macOS | `~/.videolib/drivers` |
+| Linux | `~/.videolib/drivers` |
 
 Windows 上刻意用 `%LOCALAPPDATA%` 而不是 `%APPDATA%`：后者是漫游目录，
 企业域环境下会同步到服务器，把几 MB 的浏览器驱动放进漫游配置是错的。
