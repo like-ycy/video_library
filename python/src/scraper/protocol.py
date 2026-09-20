@@ -14,6 +14,7 @@ print() 在调用时查 sys.stdout，所以下面这个替换对本模块之后�
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sys
 import threading
@@ -24,8 +25,28 @@ PROTOCOL_VERSION = 1
 # 保存真正的 stdout 作为协议通道，随后把所有常规输出改道到 stderr。
 # stderr 理论上可能为 None（pythonw 等无控制台场景），此时保持原样不动，
 # 宁可日志混进协议流，也不要让所有 print 直接崩掉。
+#
+# 协议 JSON 用 ensure_ascii=False，中文是裸 UTF-8 字节。Windows 上 stdout
+# 默认可能是 cp1252，直接 write 会在 doctor 这类含中文的载荷上抛
+# UnicodeEncodeError —— Go 侧 Inspect 会注入 PYTHONIOENCODING，但 CI 自检
+# 和用户在 cmd 里直接跑 exe 都不会。编码必须由协议通道自己钉死。
 _protocol_stream = sys.stdout
+
+
+def _force_utf8(stream: Any) -> None:
+    reconfigure = getattr(stream, "reconfigure", None)
+    if reconfigure is None:
+        return
+    # 流已开始读取或底层不支持重配置时，写出路径再走二进制 buffer 兜底。
+    with contextlib.suppress(ValueError, OSError):
+        reconfigure(encoding="utf-8", errors="strict")
+
+
+if _protocol_stream is not None:
+    _force_utf8(_protocol_stream)
 if sys.stderr is not None:
+    # 日志同样是中文；stderr 编了码失败会把诊断信息一并吞掉。
+    _force_utf8(sys.stderr)
     sys.stdout = sys.stderr
 
 # 进度阶段。Go 侧按这些值做文案映射，新增阶段需同步 Go 侧。
@@ -67,9 +88,17 @@ def _dump(payload: dict[str, Any]) -> str:
 
 def _write_line(line: str) -> None:
     # 每行独立 flush：Go 侧按行读取，缓冲会让进度长时间不可见。
+    # 优先走二进制 buffer：TextIOWrapper 的字符集即使 reconfigure 失败，
+    # 底层 buffer 仍可按 UTF-8 字节写，不依赖进程 locale。
+    data = (line + "\n").encode("utf-8")
     with _write_lock:
-        _protocol_stream.write(line + "\n")
-        _protocol_stream.flush()
+        buffer = getattr(_protocol_stream, "buffer", None)
+        if buffer is not None:
+            buffer.write(data)
+            buffer.flush()
+        else:
+            _protocol_stream.write(data.decode("utf-8"))
+            _protocol_stream.flush()
 
 
 def emit_object(payload: dict[str, Any]) -> None:

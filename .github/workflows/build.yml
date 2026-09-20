@@ -93,6 +93,11 @@ jobs:
       # 中断，不必再白跑一遍几分钟的 wails 构建。
       - name: 冻结产物自检
         working-directory: python
+        # 与 go/internal/scraper/runner.go 的 Inspect 对齐：Windows runner
+        # 默认 ANSI 代码页（cp1252）编不了 doctor JSON 里的中文。
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
         run: |
           .\dist\scraper\scraper.exe version
           .\dist\scraper\scraper.exe doctor
@@ -128,6 +133,9 @@ jobs:
 
       - name: 校验分发结构
         shell: pwsh
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
         run: |
           # 目录结构是 App 侧路径解析的契约（go/internal/toolpath 按
           # <App>/tools/scraper/scraper.exe 定位）。结构错了，用户那边表现为
