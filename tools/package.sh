@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # 组装最终分发目录（macOS），对应 docs/architecture.md §9.3 的结构。
 #
-# 前两件事必须已经做完：
-#   tools/build-python.sh
-#   tools/build-go.sh          # 本机平台，或 -platform darwin/arm64|amd64
+# 前两件事必须已经做完（通常由 tools/build.sh 串联）：
+#   PyInstaller 产出 scraper 并放到 tools/bin/scraper
+#   wails build 产出 go/build/bin/VideoLib.app
 #
 # 产物：dist/VideoLib/
 #   VideoLib.app/
@@ -11,7 +11,7 @@
 #
 # 目录结构是 App 侧路径解析的契约（go/internal/toolpath 从
 # VideoLib.app/Contents/MacOS/ 向上探测 tools/scraper/scraper）。
-# 与 tools/package.ps1 同责，只服务 macOS 布局。
+# 与 tools/package.ps1 同责，只服务 macOS 布局；CI 直接调用本脚本。
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -30,12 +30,12 @@ if [[ ! -d "$app" ]]; then
     if [[ ${#candidates[@]} -eq 1 ]]; then
         app="${candidates[0]}"
     else
-        echo "未找到 $repo/go/build/bin/VideoLib.app，请先运行 tools/build-go.sh" >&2
+        echo "未找到 $repo/go/build/bin/VideoLib.app，请先运行 tools/build.sh 或 wails build" >&2
         exit 1
     fi
 fi
 if [[ ! -e "$scraper" ]]; then
-    echo "未找到 $scraper，请先运行 tools/build-python.sh" >&2
+    echo "未找到 $scraper，请先运行 tools/build.sh 或打包刮削器到 tools/bin/scraper" >&2
     exit 1
 fi
 

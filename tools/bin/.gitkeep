@@ -1,6 +1,6 @@
 # 占位文件：保留空目录。
 #
 # tools/bin/ 是运行时依赖的落地目录，由构建脚本写入，内容本身不入库：
-#   tools/build-python.sh  → mv 刮削器产物到 tools/bin/scraper
-#   tools/package.ps1      → 从 tools/bin/ 取 scraper 与 ffprobe.exe
+#   tools/build.sh         → mv 刮削器产物到 tools/bin/scraper
+#   tools/package.{sh,ps1} → 从 tools/bin/ 取 scraper 与 ffprobe
 # 目录必须存在，否则上面的 mv 会因为父目录缺失而失败。

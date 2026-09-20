@@ -139,8 +139,8 @@
 │   │       └── javlibrary.py        # 站点解析实现
 │   └── tests/
 ├── tools/
-│   ├── build-python.{sh,ps1}
-│   ├── build-go.{sh,ps1}
+│   ├── build.sh                     # macOS 一键：Python + Go + 组装
+│   ├── package.{sh,ps1}             # 组装 dist（CI 直接调用）
 │   └── bin/                         # ─── 运行时依赖（不提交大文件）───
 │       ├── ffprobe.exe
 │       └── scraper/                 # PyInstaller onedir 产物
@@ -1058,11 +1058,11 @@ Python**（跑 hook、导入模块、读 `sys` 信息）来推断依赖。macOS 
 
 | 路径 | 说明 |
 |---|---|
-| Windows 机器直接打（推荐） | `tools\build-python.ps1` |
 | GitHub Actions `windows-latest` | 官方推荐做法。见 `.github/workflows/build.yml` |
+| Windows 机器直接打 | 在 `python/` 下 `uv run pyinstaller scraper.spec` |
 | Windows 虚拟机 | 官方推荐做法，但需装完整 Python 环境 |
 
-macOS 上跑 `tools/build-python.sh` 仍然有价值：它能验证**打包配置本身**是否成立
+macOS 上跑 `tools/build.sh`（或其中的 PyInstaller 步骤）仍然有价值：它能验证**打包配置本身**是否成立
 （seleniumbase 资源收集、`freeze_support`、stdout/stderr 分离、驱动目录重定向），
 这些与目标平台无关。但产物只能在 macOS 上跑。
 

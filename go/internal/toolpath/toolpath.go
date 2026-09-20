@@ -9,7 +9,7 @@
 //	    <App>/tools/scraper/scraper.exe
 //	    <App>/tools/ffprobe.exe
 //
-//	开发布局（tools/build-* 产出）
+//	开发布局（tools/build.sh 产出）
 //	    <repo>/tools/bin/scraper/scraper.exe
 //	    <repo>/tools/bin/ffprobe.exe
 //

@@ -47,9 +47,9 @@ name: 构建产物
 #   macos-latest       → macOS arm64（Go + scraper）
 #   macos-15-intel     → macOS amd64（Go + scraper）
 #
-# 本机自测不必开三台机器：tools/build-all.sh（macOS）或 tools\build-all.ps1
-# （Windows）会打出当前机器架构的完整 dist/VideoLib；PyInstaller 不能交叉
-# 编译，所以另一架构/另一系统的 scraper 仍只能靠对应 runner 或对应机器。
+# 本机自测不必开三台机器：tools/build.sh 会打出当前 Mac 架构的完整
+# dist/VideoLib；PyInstaller 不能交叉编译，所以另一架构/另一系统的 scraper
+# 仍只能靠对应 runner 或对应机器。
 
 on:
   push:

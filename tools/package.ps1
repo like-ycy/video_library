@@ -1,8 +1,8 @@
 # 组装最终分发目录，对应 docs/architecture.md §9.3 的结构。
 #
-# 前两件事必须已经做完：
-#   tools\build-python.ps1
-#   tools\build-go.ps1 windows/amd64
+# 前两件事必须已经做完（通常由 CI 内联步骤完成）：
+#   PyInstaller 产出 scraper 并放到 tools\bin\scraper
+#   wails build 产出 go\build\bin\VideoLib.exe
 #
 # 产物：dist\VideoLib\
 $ErrorActionPreference = "Stop"
@@ -14,10 +14,10 @@ $appExe = Join-Path $repo "go\build\bin\VideoLib.exe"
 $scraper = Join-Path $repo "tools\bin\scraper"
 
 if (-not (Test-Path $appExe)) {
-    throw "未找到 $appExe，请先运行 tools\build-go.ps1 windows/amd64"
+    throw "未找到 $appExe，请先运行 wails build -platform windows/amd64"
 }
 if (-not (Test-Path $scraper)) {
-    throw "未找到 $scraper，请先运行 tools\build-python.ps1"
+    throw "未找到 $scraper，请先把 PyInstaller 产物放到 tools\bin\scraper"
 }
 
 if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }

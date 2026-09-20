@@ -157,7 +157,7 @@ SetScraperPath(path string) error
 - 选中后调用 `SetScraperPath`，成功后 toast 提示并刷新环境状态
 
 当 `ScraperHealth` 报错"未找到刮削器组件"时，提示语中引导用户点此按钮选择
-scraper.exe，而不是提示"运行 build-python"。
+scraper.exe，而不是提示"运行 build.sh"。
 
 ## 6. 版本号规则
 
