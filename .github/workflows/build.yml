@@ -39,8 +39,8 @@ name: 构建产物
 # tools/bin/ 再由 package 脚本收进去。
 #
 # 触发方式：
-#   * 推 tag（v*）时自动构建
-#   * 也可以在 Actions 页面手动触发，用于冒烟验证
+#   * 推 tag（v*）时自动构建并发布 GitHub Release
+#   * 也可以在 Actions 页面手动触发，用于冒烟验证（只传 artifact，不建 Release）
 #
 # 平台矩阵：
 #   windows-latest     → Windows x64（Go + scraper.exe）
@@ -50,11 +50,17 @@ name: 构建产物
 # 本机自测不必开三台机器：tools/build.sh 会打出当前 Mac 架构的完整
 # dist/VideoLib；PyInstaller 不能交叉编译，所以另一架构/另一系统的 scraper
 # 仍只能靠对应 runner 或对应机器。
+#
+# Release 模式与 video_cut/.github/workflows/release.yml 对齐：
+# 各平台 job 先传 artifact，末尾单独 release job 汇总上传到 GitHub Release。
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-windows:
@@ -154,14 +160,31 @@ jobs:
           # 而不只是「目录名字对上了」。
           .\dist\VideoLib\tools\scraper\scraper.exe version
 
+      # 与 video_cut 一致：Release 资产是带平台/架构后缀的压缩包。
+      # Windows 用 zip（解压即用）；macOS 继续用 tar.gz（保住 .app 权限位）。
+      - name: 打包上传物
+        shell: pwsh
+        run: |
+          $version = "snapshot"
+          if ($env:GITHUB_REF -like "refs/tags/*") {
+            $version = $env:GITHUB_REF_NAME.TrimStart("v")
+          }
+          New-Item -ItemType Directory -Path out -Force | Out-Null
+          $pkg = Join-Path $PWD ("out\VideoLib_{0}_windows_amd64.zip" -f $version)
+          # 顶层保留 VideoLib\ 目录，与 macOS tar -C dist VideoLib 对齐。
+          Compress-Archive -Path "dist\VideoLib" -DestinationPath $pkg -Force
+          if (-not (Test-Path $pkg)) { throw "failed to create $pkg" }
+          Write-Host "package: $pkg"
+
       - name: 上传产物
         uses: actions/upload-artifact@v7
         with:
           name: videolib-windows-x64
-          # 上传组装好的分发目录：解压即为可运行结构。
-          # 通配符之后的部分保留层级，所以 artifact 根目录下直接就是
-          # VideoLib.exe 与 tools\。
-          path: dist/VideoLib/**
+          # 分发目录给「从 Actions 下载后直接跑」的场景；
+          # zip 给 release job 汇总。
+          path: |
+            dist/VideoLib/**
+            out/*.zip
           if-no-files-found: error
 
   build-macos:
@@ -247,9 +270,13 @@ jobs:
       - name: 打包上传物
         run: |
           mkdir -p out
+          version=snapshot
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
           # .app 内大量可执行位与符号链接，zip 上传后容易丢权限；
           # 用 tar.gz 保留模式位，用户解开即可用。
-          tar -czf "out/VideoLib_macos_${{ matrix.goarch }}.tar.gz" -C dist VideoLib
+          tar -czf "out/VideoLib_${version}_macos_${{ matrix.goarch }}.tar.gz" -C dist VideoLib
 
       - name: 上传产物
         uses: actions/upload-artifact@v7
@@ -257,3 +284,69 @@ jobs:
           name: videolib-macos-${{ matrix.goarch }}
           path: out/*
           if-no-files-found: error
+
+  # 与 video_cut 的 release job 同责：三个平台包齐了再发 Release。
+  # workflow_dispatch 冒烟只构建、不发布，避免测试 run 污染 Releases 页。
+  release:
+    name: 发布 GitHub Release
+    needs: [build-windows, build-macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 下载全部构建产物
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: 校验并收集 Release 资产
+        run: |
+          set -euo pipefail
+          # 各 job 的 artifact 根结构不完全一致（Windows 还带未打包的分发目录），
+          # 按文件名找包，不假设固定层级。
+          mapfile -t packages < <(
+            find release-assets -type f \( \
+              -name 'VideoLib_*_windows_amd64.zip' -o \
+              -name 'VideoLib_*_macos_arm64.tar.gz' -o \
+              -name 'VideoLib_*_macos_amd64.tar.gz' \
+            \) | sort
+          )
+          if [[ "${#packages[@]}" -ne 3 ]]; then
+            echo "expected 3 packages, got ${#packages[@]}:" >&2
+            find release-assets -type f >&2
+            exit 1
+          fi
+
+          mkdir -p release-pkg
+          for asset in "${packages[@]}"; do
+            cp "$asset" release-pkg/
+          done
+          (
+            cd release-pkg
+            sha256sum VideoLib_* > SHA256SUMS.txt
+          )
+          echo "SHA256SUMS:"
+          cat release-pkg/SHA256SUMS.txt
+
+      - name: 发布 GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          shopt -s nullglob
+          assets=(release-pkg/*)
+          if [[ "${#assets[@]}" -ne 4 ]]; then
+            echo "expected 4 assets (3 packages + SHA256SUMS), got ${#assets[@]}" >&2
+            exit 1
+          fi
+          for asset in "${assets[@]}"; do
+            basename "$asset"
+          done
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+              --title "VideoLib $GITHUB_REF_NAME" \
+              --generate-notes
+          fi
