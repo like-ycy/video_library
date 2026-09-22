@@ -467,7 +467,7 @@ export function createScrapeView(state) {
     if (!rows.length) {
       tbody.append(h('tr', {}, [
         h('td', {
-          class: 'empty',
+          class: 'empty-cell',
           colspan: 6,
           text: view.candidates.length
             ? '全部条目都已刮削。取消勾选「仅显示未刮削」可以看到它们。'

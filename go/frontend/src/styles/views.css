@@ -535,6 +535,13 @@ table.candidates tr:hover td {
   background: var(--surface);
 }
 
+/* 空状态行：td 不能用 flex 布局的 .empty，否则列宽会塌缩 */
+table.candidates td.empty-cell {
+  text-align: center;
+  color: var(--muted);
+  padding: 48px 10px;
+}
+
 table.candidates input[type='checkbox'] {
   cursor: pointer;
   accent-color: var(--primary);
