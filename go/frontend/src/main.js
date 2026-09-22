@@ -1,6 +1,6 @@
 import { call } from './api.js';
 import { h, reportError, setBusy, toast } from './ui.js';
-import { initTheme, toggleTheme, applyTheme, startThemeWatcher } from './theme.js';
+import { initTheme, cycleTheme, startThemeWatcher, themeLabel, seedThemeFromConfig } from './theme.js';
 import { DEFAULT_ROUTE, NAV_GROUPS } from './nav.js';
 import { createPlaceholderView, icon } from './components/shell.js';
 import { createWatchView } from './views/WatchView.js';
@@ -70,13 +70,18 @@ async function initWindowChrome() {
 
 function syncThemeIcon() {
   const el = document.getElementById('theme-toggle-icon');
+  const btn = document.getElementById('theme-toggle');
   if (!el) return;
-  el.textContent = document.documentElement.dataset.theme === 'light' ? 'light_mode' : 'dark_mode';
+  const pref = document.documentElement.dataset.themePref || 'system';
+  // light / dark / system 三态图标
+  el.textContent = pref === 'light' ? 'light_mode' : pref === 'dark' ? 'dark_mode' : 'brightness_auto';
+  if (btn) btn.title = themeLabel(pref);
 }
 
 function wireTheme() {
   document.getElementById('theme-toggle')?.addEventListener('click', () => {
-    toggleTheme();
+    // cycleTheme 内部已派发 cinevault:theme-changed
+    cycleTheme();
     syncThemeIcon();
   });
   window.addEventListener('cinevault:theme-changed', syncThemeIcon);
@@ -308,7 +313,7 @@ function wireGlobalSearch() {
 // ── 启动 ───────────────────────────────────────────────────────────────
 
 async function boot() {
-  // 主题优先从配置同步
+  // 主题：localStorage 优先；config 仅在本地无偏好时迁移（见 seedThemeFromConfig）
   initTheme();
   await initWindowChrome();
   wireTheme();
@@ -352,13 +357,11 @@ async function boot() {
 
   await loadLibraries();
 
-  // 尝试从配置同步主题
+  // 尝试从配置迁移主题（仅 localStorage 无值时生效，不覆盖本地选择）
   try {
     const cfg = await call('GetConfig');
-    if (cfg.theme === 'light' || cfg.theme === 'dark' || cfg.theme === 'system') {
-      applyTheme(cfg.theme);
-      syncThemeIcon();
-    }
+    seedThemeFromConfig(cfg.theme);
+    syncThemeIcon();
   } catch {
     /* no backend config yet */
   }

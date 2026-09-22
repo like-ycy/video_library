@@ -8,6 +8,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"videolib/internal/appearance"
 	"videolib/internal/config"
 	"videolib/internal/index"
 	"videolib/internal/probe"
@@ -78,6 +79,12 @@ func (a *App) SaveConfig(dto ConfigDTO) (ConfigDTO, error) {
 	a.rebuildRunner()
 
 	return a.dtoFromConfig(cfg), nil
+}
+
+// GetSystemAppearance 返回操作系统当前外观。
+// macOS 读原生 AppleInterfaceStyle；其他平台返回空字符串，由前端用 prefers-color-scheme。
+func (a *App) GetSystemAppearance() string {
+	return appearance.Get()
 }
 
 // Paths 返回配置目录信息，供设置页展示。

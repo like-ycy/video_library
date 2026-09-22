@@ -14,15 +14,19 @@
       document.documentElement.dataset.platform = p;
     })();
     // 尽早解析主题偏好，避免模块加载前闪一次默认深色。
+    // system 先用 matchMedia 猜；启动后由原生 GetSystemAppearance 纠正。
     (function () {
-      var saved = localStorage.getItem('cinevault.theme');
-      var pref = (saved === 'dark' || saved === 'light' || saved === 'system') ? saved : 'system';
-      var resolved = pref;
-      if (pref === 'system') {
-        resolved = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-      }
-      document.documentElement.dataset.theme = resolved;
-      document.documentElement.dataset.themePref = pref;
+      try {
+        var pref = localStorage.getItem('cinevault.theme') || 'system';
+        if (pref !== 'dark' && pref !== 'light' && pref !== 'system') pref = 'system';
+        var resolved = pref;
+        if (pref === 'system' && window.matchMedia) {
+          resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.dataset.themePref = pref;
+        document.documentElement.style.colorScheme = resolved;
+      } catch (e) { /* ignore */ }
     })();
   </script>
   <link rel="stylesheet" href="./src/styles/app.css">
@@ -62,8 +66,8 @@
           <span class="ms">sync</span>
           <span>立即扫描</span>
         </button>
-        <button type="button" class="btn ghost icon" id="theme-toggle" title="切换深浅主题">
-          <span class="ms" id="theme-toggle-icon">dark_mode</span>
+        <button type="button" class="btn ghost icon" id="theme-toggle" title="切换主题（亮/暗/跟随系统）">
+          <span class="ms" id="theme-toggle-icon">brightness_auto</span>
         </button>
         <span class="titlebar-sep" data-win-only></span>
         <div class="win-ctl-group" id="win-ctl-group">
