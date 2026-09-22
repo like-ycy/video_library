@@ -57,6 +57,9 @@ macOS ARM / macOS x64 三套完整产物，用 `.github/workflows/build.yml`
 ```bash
 # 本机架构：scraper + App + dist/VideoLib
 tools/build.sh
+
+# 只重建 Go App 并组装 dist（跳过 PyInstaller，改样式快速查看用）
+tools/build.sh --go
 ```
 
 产物在 `dist/VideoLib/`：`VideoLib.app` + `tools/scraper/`，可直接打开测试。
