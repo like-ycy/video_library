@@ -638,6 +638,12 @@ table.candidates input[type='checkbox'] {
   align-content: flex-start;
 }
 
+/* 空状态需占满横排行，否则 flex 子项按内容收缩后会贴左 */
+.continue-row > .empty {
+  flex: 1 1 100%;
+  width: 100%;
+}
+
 .continue-card {
   flex: 0 0 280px;
   max-width: 100%;
