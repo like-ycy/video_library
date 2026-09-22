@@ -819,6 +819,12 @@ table.candidates input[type='checkbox'] {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+/* 中列必须可收缩：否则 nowrap 长标题撑开 1fr，把右侧「继续」挤出卡片 */
+.history-body {
+  min-width: 0;
 }
 
 .history-poster {
@@ -867,6 +873,7 @@ table.candidates input[type='checkbox'] {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 .history-top {
@@ -874,10 +881,15 @@ table.candidates input[type='checkbox'] {
   gap: 10px;
   align-items: baseline;
   font-size: var(--fs-sm);
+  min-width: 0;
 }
 
 .history-top .muted {
   color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Issues ── */
@@ -1028,6 +1040,20 @@ table.candidates input[type='checkbox'] {
 
   .history-card {
     grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  /* 窄窗：操作区跳到内容下方，避免「继续」按钮被右侧裁剪 */
+  .history-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    width: 100%;
+  }
+
+  .history-poster {
+    width: 100%;
+    max-width: 240px;
   }
 
   .form-row {
