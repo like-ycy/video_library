@@ -61,7 +61,8 @@ func Defaults() Config {
 	return Config{
 		Concurrency:      2,
 		ScrapeTimeoutMin: 30,
-		Theme:            "dark",
+		// 未设置时跟随系统；手动 dark/light 由用户显式写入。
+		Theme: "system",
 	}
 }
 
@@ -177,7 +178,9 @@ func (c *Config) Normalize() {
 	if c.ScrapeTimeoutMin <= 0 {
 		c.ScrapeTimeoutMin = Defaults().ScrapeTimeoutMin
 	}
-	if c.Theme == "" {
+	switch c.Theme {
+	case "system", "dark", "light":
+	default:
 		c.Theme = Defaults().Theme
 	}
 

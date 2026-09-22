@@ -1,7 +1,7 @@
 import { call } from '../api.js';
 import { clear, h, reportError, setBusy, toast } from '../ui.js';
 import { emptyState, pageHeader } from '../components/shell.js';
-import { applyTheme } from '../theme.js';
+import { applyTheme, getThemePreference } from '../theme.js';
 import { resetOnboarding } from './Onboarding.js';
 
 /**
@@ -217,7 +217,7 @@ export function createSettingsView(state, section) {
                 scraperPath: scraperPath.value.trim(),
                 ffprobePath: cfg.ffprobePath || '',
                 playerPath: cfg.playerPath || '',
-                theme: cfg.theme || 'dark',
+                theme: cfg.theme || 'system',
               });
               toast('已保存刮削器设置', 'ok');
               await checkHealth();
@@ -273,7 +273,7 @@ export function createSettingsView(state, section) {
                 scraperPath: cfg.scraperPath || '',
                 ffprobePath: cfg.ffprobePath || '',
                 playerPath: playerPath.value.trim(),
-                theme: cfg.theme || 'dark',
+                theme: cfg.theme || 'system',
               });
               toast('已保存播放器设置', 'ok');
             } catch (error) {
@@ -375,10 +375,15 @@ export function createSettingsView(state, section) {
     clear(body);
     const paths = await call('Paths');
     const cfg = await call('GetConfig');
+    // 配置为权威偏好；后端未返回合法值时回退到本地偏好（默认 system）。
+    const currentPref =
+      cfg.theme === 'system' || cfg.theme === 'dark' || cfg.theme === 'light'
+        ? cfg.theme
+        : getThemePreference();
 
     const makeThemeBtn = (value, label) => h('button', {
       type: 'button',
-      class: `btn ${document.documentElement.dataset.theme === value ? 'primary' : 'secondary'}`,
+      class: `btn ${currentPref === value ? 'primary' : 'secondary'}`,
       onclick: async () => {
         applyTheme(value);
         try {
@@ -401,11 +406,15 @@ export function createSettingsView(state, section) {
 
     body.append(h('div', { class: 'panel' }, [
       h('div', { class: 'panel-title', text: '主题' }),
-      h('div', { class: 'panel-desc', style: 'margin-bottom:12px', text: '两套主题仅切换语义色彩 token；字体统一为 Inter + JetBrains Mono。' }),
+      h('div', { class: 'panel-desc', style: 'margin-bottom:12px', text: '默认跟随系统；手动选择深色/浅色后会记住，下次启动沿用。仅切换语义色彩 token，字体统一为 Inter + JetBrains Mono。' }),
       h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' }, [
+        makeThemeBtn('system', '跟随系统'),
         makeThemeBtn('dark', '深色'),
         makeThemeBtn('light', '浅色'),
       ]),
+      currentPref === 'system'
+        ? h('div', { class: 'panel-desc', style: 'margin-top:10px', text: `跟随系统当前为：${document.documentElement.dataset.theme === 'light' ? '浅色' : '深色'}，系统切换后实时生效。` })
+        : null,
     ]));
 
     body.append(h('div', { class: 'panel', style: 'margin-top:14px' }, [

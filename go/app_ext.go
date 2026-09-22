@@ -61,7 +61,8 @@ func (a *App) SaveConfig(dto ConfigDTO) (ConfigDTO, error) {
 	a.cfg.ScraperPath = dto.ScraperPath
 	a.cfg.FFprobePath = dto.FFprobePath
 	a.cfg.PlayerPath = dto.PlayerPath
-	if dto.Theme != "" {
+	switch dto.Theme {
+	case "system", "dark", "light":
 		a.cfg.Theme = dto.Theme
 	}
 	cfg := a.cfg

@@ -1,6 +1,6 @@
 import { call } from './api.js';
 import { h, reportError, setBusy, toast } from './ui.js';
-import { initTheme, toggleTheme, applyTheme } from './theme.js';
+import { initTheme, toggleTheme, applyTheme, startThemeWatcher } from './theme.js';
 import { DEFAULT_ROUTE, NAV_GROUPS } from './nav.js';
 import { createPlaceholderView, icon } from './components/shell.js';
 import { createWatchView } from './views/WatchView.js';
@@ -80,6 +80,7 @@ function wireTheme() {
     syncThemeIcon();
   });
   window.addEventListener('cinevault:theme-changed', syncThemeIcon);
+  startThemeWatcher();
   syncThemeIcon();
 }
 
@@ -354,7 +355,7 @@ async function boot() {
   // 尝试从配置同步主题
   try {
     const cfg = await call('GetConfig');
-    if (cfg.theme === 'light' || cfg.theme === 'dark') {
+    if (cfg.theme === 'light' || cfg.theme === 'dark' || cfg.theme === 'system') {
       applyTheme(cfg.theme);
       syncThemeIcon();
     }

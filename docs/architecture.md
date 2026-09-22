@@ -190,7 +190,7 @@ type Config struct {
     ScraperPath string       `json:"scraper_path"`  // 空则自动探测 tools/scraper/scraper.exe
     FFprobePath string       `json:"ffprobe_path"`
     PlayerPath  string       `json:"player_path"`   // 外部播放器，空则走系统默认关联
-    Theme       string       `json:"theme"`
+    Theme       string       `json:"theme"`    // system | dark | light，未设置默认 system（跟随系统）
 }
 
 type LibraryRef struct {

@@ -13,6 +13,17 @@
         : ua.indexOf('Win') >= 0 ? 'windows' : 'linux';
       document.documentElement.dataset.platform = p;
     })();
+    // 尽早解析主题偏好，避免模块加载前闪一次默认深色。
+    (function () {
+      var saved = localStorage.getItem('cinevault.theme');
+      var pref = (saved === 'dark' || saved === 'light' || saved === 'system') ? saved : 'system';
+      var resolved = pref;
+      if (pref === 'system') {
+        resolved = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      }
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.dataset.themePref = pref;
+    })();
   </script>
   <link rel="stylesheet" href="./src/styles/app.css">
 </head>
