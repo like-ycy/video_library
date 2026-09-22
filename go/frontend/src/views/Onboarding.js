@@ -38,7 +38,7 @@ export function createOnboarding(state, { onDone }) {
     const canNext = step === 0 ? state.libraries.length > 0 : true;
 
     root.append(pageHeader({
-      title: '欢迎使用 CineVault',
+      title: '欢迎使用视频库',
       sub: `第 ${step + 1} / ${steps.length} 步`,
     }));
 

@@ -1,4 +1,5 @@
-/* App shell: titlebar · sidebar · content host · busy · toast */
+/* App shell: titlebar · sidebar · content host · busy · toast
+   Aligned to design-system desktop layout contract. */
 
 #app {
   display: flex;
@@ -18,9 +19,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 0 0 10px;
+  /* 右侧留白：主题按钮等不贴窗口边缘，避免与窗口控件挤在一起 */
+  padding: 0 10px;
   background: var(--titlebar-bg);
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border);
   /* Wails 用 --wails-draggable 触发 performWindowDrag；-webkit-app-region 在 WKWebView 上无效 */
   --wails-draggable: drag;
   -webkit-app-region: drag;
@@ -30,7 +32,7 @@
 
 /* macOS 原生红绿灯占位：TitleBarHiddenInset 时让开左上角控件区 */
 html[data-platform="darwin"] .titlebar {
-  padding-left: 78px;
+  padding-left: 84px;
 }
 
 .win-ctl-group {
@@ -82,7 +84,7 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
 .titlebar-right {
   flex: 1 1 0;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 6px;
 }
 
 .brand-block {
@@ -92,27 +94,11 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
   min-width: 0;
 }
 
-.brand-mark {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  background: var(--primary);
-  color: var(--on-primary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  box-shadow: var(--shadow-sm);
-  flex-shrink: 0;
-}
-
 .brand-name {
   font-family: var(--font-title);
   font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 600;
+  letter-spacing: 0;
   color: var(--text);
   white-space: nowrap;
 }
@@ -122,15 +108,15 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
   font-size: 10px;
   color: var(--muted);
   padding: 1px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
   background: var(--bg);
 }
 
 .titlebar-sep {
   width: 1px;
   height: 14px;
-  background: var(--border-soft);
+  background: var(--border);
   margin: 0 4px;
   flex-shrink: 0;
 }
@@ -141,9 +127,10 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
   gap: 6px;
   min-width: 0;
   max-width: 320px;
-  padding: 4px 8px;
+  height: var(--control-sm);
+  padding: 0 8px;
   border-radius: var(--radius-control);
-  background: var(--bg);
+  background: var(--card);
   border: 1px solid var(--border-strong);
 }
 
@@ -164,6 +151,7 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
   max-width: 260px;
   text-overflow: ellipsis;
   cursor: pointer;
+  height: 100%;
 }
 
 .library-select:disabled {
@@ -182,21 +170,22 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
 .global-search .ms {
   position: absolute;
   left: 10px;
-  color: var(--muted);
+  color: var(--faint);
   font-size: 16px;
   pointer-events: none;
 }
 
 .global-search input {
   width: 100%;
-  background: var(--bg);
+  height: var(--control);
+  background: var(--card);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
-  padding: 5px 56px 5px 32px;
-  font-size: var(--fs-sm);
+  padding: 0 56px 0 32px;
+  font-size: var(--fs-md);
   color: var(--text);
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.12s, box-shadow 0.12s;
 }
 
 .global-search input::placeholder {
@@ -205,6 +194,7 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
 
 .global-search input:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
 .global-search kbd {
@@ -214,7 +204,7 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
   font-size: 10px;
   color: var(--muted);
   background: var(--surface);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 1px 6px;
   pointer-events: none;
@@ -262,8 +252,8 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
   flex: 0 0 var(--sidebar-w);
   display: flex;
   flex-direction: column;
-  background: var(--bg);
-  border-right: 1px solid var(--border-soft);
+  background: var(--card);
+  border-right: 1px solid var(--border);
 }
 
 .sidebar-nav {
@@ -298,7 +288,7 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
   gap: 8px;
   padding: 7px 10px;
   border-radius: var(--radius-control);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
   font-weight: 500;
   color: var(--muted);
   border-left: 2px solid transparent;
@@ -327,13 +317,16 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
 
 .nav-item:hover {
   color: var(--text);
-  background: var(--card);
+  background: var(--surface);
 }
 
+/* Selected: info-soft + primary + inset rail */
 .nav-item.active {
-  background: var(--surface-hover);
+  background: var(--primary-container);
   color: var(--primary);
+  font-weight: 500;
   border-left-color: var(--primary);
+  box-shadow: inset 2px 0 0 var(--primary);
 }
 
 .nav-item .nav-badge {
@@ -372,8 +365,8 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
 .sidebar-foot {
   flex: 0 0 auto;
   padding: 10px 12px;
-  border-top: 1px solid var(--border-soft);
-  background: var(--titlebar-bg);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -400,7 +393,7 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
   height: 8px;
   border-radius: 50%;
   background: var(--ok);
-  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 45%, transparent);
   animation: pulse-ok 2s ease infinite;
 }
 
@@ -443,13 +436,13 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
 
 @keyframes pulse-ok {
   0% {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 45%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--ok) 0%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 0%, transparent);
   }
 }
 
@@ -478,21 +471,23 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 20px 12px;
-  border-bottom: 1px solid var(--border-soft);
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
 }
 
 .page-header h1 {
   font-family: var(--font-title);
   font-size: var(--fs-title);
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
 }
 
 .page-header .page-sub {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
   color: var(--muted);
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 .page-header-actions {
@@ -617,4 +612,31 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
 
 .library-unavailable .empty {
   max-width: 420px;
+}
+
+/* ── Responsive: <900px collapse sidebar; <560px single column ── */
+
+@media (max-width: 900px) {
+  .sidebar {
+    display: none;
+  }
+
+  .titlebar-center {
+    flex: 0 1 240px;
+  }
+}
+
+@media (max-width: 560px) {
+  .titlebar-center {
+    display: none;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .page-body {
+    padding: 12px 14px 20px;
+  }
 }

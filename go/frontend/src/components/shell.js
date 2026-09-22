@@ -34,7 +34,7 @@ export function emptyState(opts = {}) {
       row.append(
         h('button', {
           type: 'button',
-          class: `btn ${action.primary ? 'primary' : 'secondary'}`,
+          class: `btn large ${action.primary ? 'primary' : 'secondary'}`,
           onclick: action.onClick,
         }, [action.icon ? icon(action.icon) : null, h('span', { text: action.label })]),
       );

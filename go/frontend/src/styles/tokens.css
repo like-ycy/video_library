@@ -1,57 +1,65 @@
-/* Design tokens — dual theme, shared metrics.
-   Dark Obsidian is default; Light Precision only swaps color vars.
-   Source of truth: stitch design system code.html (tokens only). */
+/* Design tokens — CineVault Unified Desktop Design System (Arco-inspired).
+   Dual theme swaps color vars only; metrics stay shared.
+   Source of truth: design-system/DESIGN.md + design-system/src/index.css.
+   Mapping (design → app): background→bg, surface→card,
+   surface-2→surface, surface-3→surface-hover, foreground→text,
+   primary-soft/info-soft→primary-container. */
 
 :root,
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  /* Dark Obsidian */
-  --bg: #14121d;
-  --titlebar-bg: #100e18;
-  --card: #1c1a27;
-  --surface: #242132;
-  --surface-hover: #2e2b3d;
-  --subtle: #2e2b3d;
-  --primary: #d0bcff;
-  --primary-hover: #e4d8ff;
-  --primary-container: #3e2a82;
-  --on-primary: #14121d;
-  --text: #e6e0f1;
-  --muted: #9e99aa;
-  --faint: #626070;
-  --border: #494454;
-  --border-strong: #353142;
-  --border-soft: #2b2738;
-  --input-bg: #14121d;
+  /* Dark theme */
+  --bg: #0b0d10;
+  --titlebar-bg: #151a22;
+  --card: #151a22;
+  --surface: #1d2633;
+  --surface-hover: #263241;
+  --subtle: #1d2633;
+  --primary: #4080ff;
+  --primary-hover: #6aa1ff;
+  --primary-active: #165dff;
+  --primary-container: #172c4a;
+  --on-primary: #ffffff;
+  --text: #f2f3f5;
+  --muted: #c9cdd4;
+  --faint: #86909c;
+  --border: #2a3441;
+  --border-strong: #3b4756;
+  --border-soft: #2a3441;
+  --input-bg: #151a22;
 
   /* Semantic */
-  --ok: #10b981;
-  --ok-bg: rgba(16, 185, 129, 0.15);
-  --ok-border: rgba(16, 185, 129, 0.3);
-  --warn: #f59e0b;
-  --warn-bg: rgba(245, 158, 11, 0.15);
-  --warn-border: rgba(245, 158, 11, 0.3);
-  --danger: #ef4444;
-  --danger-bg: rgba(239, 68, 68, 0.15);
-  --danger-border: rgba(239, 68, 68, 0.3);
-  --info: #38bdf8;
-  --info-bg: rgba(56, 189, 248, 0.15);
-  --info-border: rgba(56, 189, 248, 0.3);
+  --ok: #23c343;
+  --ok-bg: #12351f;
+  --ok-border: #1f5c32;
+  --warn: #ffaa2c;
+  --warn-bg: #3a2914;
+  --warn-border: #6a4a1a;
+  --danger: #f76969;
+  --danger-bg: #3b1e20;
+  --danger-border: #6e3235;
+  --info: #4080ff;
+  --info-bg: #172c4a;
+  --info-border: #2a4f8a;
 
   /* Elevation / chrome */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.45);
-  --overlay: rgba(8, 6, 14, 0.72);
-  --scroll-track: #181622;
-  --scroll-thumb: #393548;
-  --scroll-thumb-hover: #534e65;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%), 0 6px 18px rgb(0 0 0 / 18%);
+  --shadow-md: 0 18px 48px rgb(0 0 0 / 55%);
+  --overlay: rgba(0, 0, 0 / 72%);
+  --scroll-track: #0b0d10;
+  --scroll-thumb: #2a3441;
+  --scroll-thumb-hover: #3b4756;
 
   /* Metrics (shared across themes) */
-  --radius-control: 8px;
-  --radius-card: 10px;
-  --radius-panel: 12px;
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-panel: 10px;
+  --radius-dialog: 12px;
   --radius-pill: 999px;
+  --control-sm: 28px;
+  --control: 32px;
+  --control-lg: 40px;
   --sidebar-w: 240px;
   --titlebar-h: 40px;
   --actor-panel-w: 220px;
@@ -61,58 +69,61 @@
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;
+  --space-8: 32px;
 
-  /* Type */
-  --font-title: 'Space Grotesk', system-ui, sans-serif;
-  --font-body: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
-  --fs-xs: 11px;
+  /* Type — Inter stack per design contract */
+  --font-body: Inter, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-title: Inter, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', Consolas, ui-monospace, monospace;
+  --fs-xs: 12px;
   --fs-sm: 12px;
-  --fs-base: 13px;
+  --fs-base: 14px;
   --fs-md: 14px;
   --fs-lg: 16px;
-  --fs-title: 18px;
+  --fs-title: 24px;
+  --fs-section: 20px;
 }
 
 :root[data-theme='light'] {
   color-scheme: light;
 
-  /* Light Precision */
-  --bg: #faf8ff;
-  --titlebar-bg: #f1eff9;
+  /* Light theme */
+  --bg: #f7f8fa;
+  --titlebar-bg: #ffffff;
   --card: #ffffff;
-  --surface: #f1eff9;
-  --surface-hover: #e5e2f0;
-  --subtle: #e5e2f0;
-  --primary: #3525cd;
-  --primary-hover: #281ba6;
-  --primary-container: #e4e0ff;
+  --surface: #f2f3f5;
+  --surface-hover: #e5e6eb;
+  --subtle: #f2f3f5;
+  --primary: #165dff;
+  --primary-hover: #4080ff;
+  --primary-active: #0e42d2;
+  --primary-container: #e8f3ff;
   --on-primary: #ffffff;
-  --text: #131b2e;
-  --muted: #626070;
-  --faint: #8a8798;
-  --border: #c7c4d8;
-  --border-strong: #d5d2e4;
-  --border-soft: #e5e2f0;
+  --text: #1d2129;
+  --muted: #4e5969;
+  --faint: #86909c;
+  --border: #e5e6eb;
+  --border-strong: #c9cdd4;
+  --border-soft: #e5e6eb;
   --input-bg: #ffffff;
 
-  --ok: #059669;
-  --ok-bg: #ecfdf5;
-  --ok-border: rgba(5, 150, 105, 0.3);
-  --warn: #d97706;
-  --warn-bg: #fffbeb;
-  --warn-border: rgba(217, 119, 6, 0.3);
-  --danger: #dc2626;
-  --danger-bg: #fef2f2;
-  --danger-border: rgba(220, 38, 38, 0.3);
-  --info: #0284c7;
-  --info-bg: #f0f9ff;
-  --info-border: rgba(2, 132, 199, 0.3);
+  --ok: #00b42a;
+  --ok-bg: #e8ffea;
+  --ok-border: #a6f0b0;
+  --warn: #ff7d00;
+  --warn-bg: #fff7e8;
+  --warn-border: #ffd9a0;
+  --danger: #f53f3f;
+  --danger-bg: #ffece8;
+  --danger-border: #fcb6b6;
+  --info: #0e42d2;
+  --info-bg: #e8f3ff;
+  --info-border: #bedaff;
 
-  --shadow-sm: 0 1px 2px rgba(19, 27, 46, 0.06);
-  --shadow-md: 0 6px 24px rgba(19, 27, 46, 0.1);
-  --overlay: rgba(19, 27, 46, 0.4);
-  --scroll-track: #f1eff9;
-  --scroll-thumb: #c7c4d8;
-  --scroll-thumb-hover: #a9a5c0;
+  --shadow-sm: 0 1px 2px rgb(29 33 41 / 4%), 0 6px 18px rgb(29 33 41 / 5%);
+  --shadow-md: 0 18px 48px rgb(29 33 41 / 22%);
+  --overlay: rgba(29 33 41 / 40%);
+  --scroll-track: #f7f8fa;
+  --scroll-thumb: #c9cdd4;
+  --scroll-thumb-hover: #86909c;
 }

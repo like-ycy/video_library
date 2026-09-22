@@ -407,10 +407,10 @@ export function createSettingsView(state, section) {
 
     body.append(h('div', { class: 'panel' }, [
       h('div', { class: 'panel-title', text: '主题' }),
-      h('div', { class: 'panel-desc', style: 'margin-bottom:12px', text: '两套主题仅切换色彩变量；字体统一为 Space Grotesk + Inter + JetBrains Mono。' }),
+      h('div', { class: 'panel-desc', style: 'margin-bottom:12px', text: '两套主题仅切换语义色彩 token；字体统一为 Inter + JetBrains Mono。' }),
       h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' }, [
-        makeThemeBtn('dark', '深色 Obsidian'),
-        makeThemeBtn('light', '浅色 Precision'),
+        makeThemeBtn('dark', '深色'),
+        makeThemeBtn('light', '浅色'),
       ]),
     ]));
 
@@ -441,7 +441,7 @@ export function createSettingsView(state, section) {
     updateHeader();
     clear(body);
     body.append(h('div', { class: 'panel' }, [
-      h('div', { class: 'panel-title', text: 'CineVault Workstation' }),
+      h('div', { class: 'panel-title', text: '视频库工作站' }),
       h('div', { class: 'panel-desc', text: '本地视频库桌面端：刮削元数据 + 浏览观看。Windows x64 · Go + Wails v2 + WebView2。' }),
       h('div', { class: 'detail-rows', style: 'margin-top:12px' }, [
         h('div', { class: 'detail-row' }, ['App 版本：', h('b', { text: '0.1.0' })]),

@@ -38,7 +38,7 @@ func main() {
 	}
 
 	opts := &options.App{
-		Title:            "CineVault",
+		Title:            "视频库",
 		Width:            1440,
 		Height:           920,
 		MinWidth:         1024,

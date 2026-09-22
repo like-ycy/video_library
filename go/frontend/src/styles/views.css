@@ -1,5 +1,5 @@
-/* View-specific styles — migrated from legacy WatchView / ScrapeView,
-   restyled against CineVault tokens. */
+/* View-specific styles — CineVault design system tokens.
+   Cards 8px · panels 10px · selected = primary-soft + primary. */
 
 /* ── Watch module (actresses / all movies) ── */
 
@@ -16,12 +16,12 @@
   display: flex;
   flex-direction: column;
   background: var(--card);
-  border-right: 1px solid var(--border-soft);
+  border-right: 1px solid var(--border);
 }
 
 .actor-panel-head {
   padding: 10px;
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border);
 }
 
 .actor-list {
@@ -39,7 +39,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   font-size: var(--fs-sm);
   color: var(--muted);
   cursor: pointer;
@@ -54,9 +54,10 @@
 }
 
 .actor-item.active {
-  background: var(--surface-hover);
-  border-color: var(--primary);
-  color: var(--text);
+  background: var(--primary-container);
+  border-color: transparent;
+  color: var(--primary);
+  box-shadow: inset 2px 0 0 var(--primary);
 }
 
 .actor-item .actor-name {
@@ -88,7 +89,7 @@
 .actor-divider {
   margin: 4px 6px;
   border: none;
-  border-top: 1px solid var(--border-soft);
+  border-top: 1px solid var(--border);
 }
 
 .watch-main {
@@ -105,7 +106,7 @@
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
 
@@ -114,17 +115,20 @@
 }
 
 .genre-chip {
-  padding: 4px 10px;
+  height: 22px;
+  padding: 0 10px;
   border-radius: var(--radius-pill);
   background: var(--surface);
   border: 1px solid var(--border);
   font-size: var(--fs-xs);
   color: var(--muted);
+  display: inline-flex;
+  align-items: center;
 }
 
 .genre-chip.active {
   background: var(--primary-container);
-  border-color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
   color: var(--primary);
 }
 
@@ -152,7 +156,7 @@
 
 .card {
   background: var(--card);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border);
   border-radius: var(--radius-card);
   overflow: hidden;
   cursor: pointer;
@@ -164,14 +168,14 @@
 .card:hover {
   transform: translateY(-2px);
   border-color: var(--primary);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .card .poster,
 .card .thumb {
   position: relative;
   aspect-ratio: 2 / 3;
-  background: #221f30;
+  background: var(--surface);
   overflow: hidden;
   display: block;
   width: 100%;
@@ -197,7 +201,7 @@
 
 .card .poster .placeholder .ms {
   font-size: 36px;
-  color: var(--border);
+  color: var(--border-strong);
 }
 
 .card .fanha-chip {
@@ -209,7 +213,7 @@
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--primary);
-  background: rgba(20, 18, 29, 0.9);
+  background: color-mix(in srgb, var(--card) 90%, transparent);
   backdrop-filter: blur(6px);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -224,7 +228,7 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: rgba(20, 18, 29, 0.8);
+  background: color-mix(in srgb, var(--card) 85%, transparent);
   backdrop-filter: blur(6px);
   border: 1px solid var(--border);
   color: var(--danger);
@@ -297,7 +301,7 @@
 .card .card-foot {
   margin-top: 6px;
   padding-top: 8px;
-  border-top: 1px solid var(--border-soft);
+  border-top: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   font-family: var(--font-mono);
@@ -337,7 +341,7 @@
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--surface);
+  background: var(--card);
   border: 1px solid var(--border);
   color: var(--text);
   display: flex;
@@ -346,7 +350,7 @@
 }
 
 .overlay-close:hover {
-  background: var(--surface-hover);
+  background: var(--surface);
 }
 
 .detail-cover {
@@ -359,8 +363,8 @@
 
 .detail-title {
   font-family: var(--font-title);
-  font-size: 20px;
-  font-weight: 700;
+  font-size: var(--fs-section);
+  font-weight: 600;
   margin: 14px 0 10px;
 }
 
@@ -397,9 +401,9 @@
 
 .shots img {
   width: 100%;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   cursor: pointer;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border);
 }
 
 .lightbox {
@@ -477,7 +481,7 @@
   gap: 8px;
   align-items: center;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
 
@@ -497,7 +501,7 @@
 .table-wrap {
   flex: 1;
   overflow-y: auto;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: var(--card);
   min-width: 0;
@@ -524,7 +528,7 @@ table.candidates th {
 
 table.candidates td {
   padding: 7px 10px;
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border);
 }
 
 table.candidates tr:hover td {
@@ -546,7 +550,7 @@ table.candidates input[type='checkbox'] {
 
 .progress-panel > .panel {
   background: var(--card);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border);
   border-radius: var(--radius-card);
   padding: 12px;
 }
@@ -638,7 +642,7 @@ table.candidates input[type='checkbox'] {
   align-items: center;
   padding: 10px;
   background: var(--card);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border);
   border-radius: var(--radius-card);
 }
 
@@ -647,7 +651,7 @@ table.candidates input[type='checkbox'] {
   aspect-ratio: 16/10;
   border-radius: 6px;
   overflow: hidden;
-  background: #221f30;
+  background: var(--surface);
   border: none;
   padding: 0;
   cursor: pointer;
@@ -737,9 +741,9 @@ table.candidates input[type='checkbox'] {
   gap: 12px;
   align-items: center;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--bg);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border);
 }
 
 .issue-main {
@@ -765,7 +769,7 @@ table.candidates input[type='checkbox'] {
   gap: 12px;
   align-items: start;
   padding: 10px 0;
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border);
 }
 
 .form-row:last-of-type {
@@ -805,7 +809,7 @@ table.candidates input[type='checkbox'] {
   gap: 12px;
   align-items: center;
   padding: 12px 0;
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
 
@@ -834,4 +838,28 @@ table.candidates input[type='checkbox'] {
 .page > .scrape-main {
   flex: 1;
   min-height: 0;
+}
+
+/* ── Narrow content: single column ── */
+@media (max-width: 560px) {
+  .scrape-body {
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .progress-panel {
+    flex: 0 0 auto;
+  }
+
+  .history-card {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
 }
