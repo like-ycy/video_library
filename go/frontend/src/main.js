@@ -1,5 +1,5 @@
 import { call } from './api.js';
-import { h, reportError, setBusy, setLibraryPathHint, setScraperStatus, toast } from './ui.js';
+import { h, reportError, setBusy, toast } from './ui.js';
 import { initTheme, toggleTheme, applyTheme } from './theme.js';
 import { DEFAULT_ROUTE, NAV_GROUPS } from './nav.js';
 import { createPlaceholderView, icon } from './components/shell.js';
@@ -195,7 +195,6 @@ function renderPicker() {
   if (!state.libraries.length) {
     picker.append(h('option', { text: '尚未添加视频库' }));
     picker.disabled = true;
-    setLibraryPathHint('');
     return;
   }
 
@@ -207,8 +206,6 @@ function renderPicker() {
     }));
   }
   picker.value = state.libraryId;
-  const current = state.libraries.find((lib) => lib.id === state.libraryId);
-  setLibraryPathHint(current?.root ?? '');
 }
 
 function shortLib(root) {
@@ -221,32 +218,9 @@ async function selectLibrary(id) {
   state.libraryId = id;
   const picker = document.getElementById('library-picker');
   if (picker) picker.value = id;
-  const current = state.libraries.find((lib) => lib.id === id);
-  setLibraryPathHint(current?.root ?? '');
   await views[state.route]?.onLibraryChange?.();
   await refreshContinueCount();
   buildSidebar();
-}
-
-async function refreshScraperStatus() {
-  // 启动时探测一次；失败只改侧栏文案，不弹错误。
-  try {
-    const health = await call('ScraperHealth');
-    if (health?.chrome?.found === false) {
-      setScraperStatus('error', '缺少 Chrome');
-    } else if (health?.scraper) {
-      setScraperStatus('ready', `刮削器 ${health.scraper}`);
-    } else {
-      setScraperStatus('unknown', '刮削器未检测');
-    }
-  } catch (error) {
-    const message = error?.message ?? String(error ?? '');
-    if (message.includes('未找到刮削器') || message.includes('scraper')) {
-      setScraperStatus('unknown', '刮削器未配置');
-    } else {
-      setScraperStatus('error', '刮削器自检失败');
-    }
-  }
 }
 
 async function refreshContinueCount() {
@@ -392,8 +366,6 @@ async function boot() {
     const usable = state.libraries.find((lib) => lib.available) ?? state.libraries[0];
     await selectLibrary(usable.id);
   }
-
-  await refreshScraperStatus();
 
   if (needsOnboarding() && !state.libraryId) {
     state.showOnboarding = true;

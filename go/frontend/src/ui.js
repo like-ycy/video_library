@@ -83,19 +83,3 @@ export function setBusy(on) {
   if (!bar) return;
   bar.classList.toggle('on', Boolean(on));
 }
-
-/** 可选中的库路径展示。 */
-export function setLibraryPathHint(root) {
-  const el = document.getElementById('library-path');
-  if (el) el.textContent = root || '—';
-}
-
-/** 侧栏刮削器状态：ready | unknown | error */
-export function setScraperStatus(kind, text) {
-  const el = document.getElementById('scraper-status');
-  const label = document.getElementById('scraper-status-text');
-  if (!el || !label) return;
-  el.classList.remove('ready', 'unknown', 'error');
-  el.classList.add(kind);
-  label.textContent = text;
-}

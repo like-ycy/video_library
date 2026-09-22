@@ -1,7 +1,7 @@
 import { call } from '../api.js';
 import { clear, h, reportError, toast } from '../ui.js';
 import { emptyState, pageHeader } from '../components/shell.js';
-import { historyCard } from '../components/card.js';
+import { continueCard, historyCard } from '../components/card.js';
 import { createDetailLayer } from '../components/detail.js';
 
 /** kind: 'continue' | 'recent' */
@@ -9,9 +9,9 @@ export function createHistoryView(state, kind) {
   const title = kind === 'continue' ? '继续观看' : '最近播放';
   const iconName = kind === 'continue' ? 'play_circle' : 'history';
 
-  const grid = h('div', { class: 'history-grid' });
+  const list = h('div', { class: kind === 'continue' ? 'continue-row' : 'history-grid' });
   const headerHost = h('div');
-  const root = h('div', { class: 'page', dataset: { view: kind } }, [headerHost, h('div', { class: 'page-body' }, [grid])]);
+  const root = h('div', { class: 'page', dataset: { view: kind } }, [headerHost, h('div', { class: 'page-body' }, [list])]);
   const detail = createDetailLayer(state);
 
   const view = { items: [], loading: false };
@@ -52,9 +52,9 @@ export function createHistoryView(state, kind) {
 
   async function load() {
     updateHeader();
-    clear(grid);
+    clear(list);
     if (!state.libraryId) {
-      grid.append(emptyState({
+      list.append(emptyState({
         icon: 'video_library',
         title: '还没有视频库',
         desc: '先添加视频库并播放几集，这里就会出现记录。',
@@ -75,7 +75,7 @@ export function createHistoryView(state, kind) {
     }
 
     if (!view.items.length) {
-      grid.append(emptyState({
+      list.append(emptyState({
         icon: iconName,
         title: kind === 'continue' ? '没有未看完的视频' : '还没有播放记录',
         desc: kind === 'continue'
@@ -85,8 +85,21 @@ export function createHistoryView(state, kind) {
       return;
     }
 
+    const render = kind === 'continue' ? continueCard : historyCard;
+    const clearProgress = kind === 'continue'
+      ? async (it) => {
+        try {
+          await call('ClearProgress', state.libraryId, it.id);
+          toast('已清除进度');
+          await load();
+        } catch (error) {
+          reportError('清除进度失败', error);
+        }
+      }
+      : null;
+
     for (const item of view.items) {
-      grid.append(historyCard(item, {
+      list.append(render(item, {
         onOpen: (it) => detail.open(it),
         onPlay: (it) => {
           detail.open(it);
@@ -94,17 +107,7 @@ export function createHistoryView(state, kind) {
             document.querySelector('.overlay .player')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
           }, 50);
         },
-        onClear: kind === 'continue'
-          ? async (it) => {
-            try {
-              await call('ClearProgress', state.libraryId, it.id);
-              toast('已清除进度');
-              await load();
-            } catch (error) {
-              reportError('清除进度失败', error);
-            }
-          }
-          : null,
+        onClear: clearProgress,
       }));
     }
   }

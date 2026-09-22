@@ -1,5 +1,5 @@
 import { h } from '../ui.js';
-import { formatDuration, formatPosition } from '../format.js';
+import { formatDuration, formatPosition, formatRelativeTime, formatTimecode } from '../format.js';
 
 /** 状态点/文字：未刮削 · 已刮削 · 缺图 · 文件异常 */
 export function scrapeState(item) {
@@ -91,6 +91,59 @@ export function videoCard(item, opts = {}) {
   ]);
 
   return card;
+}
+
+/**
+ * 继续观看：横排大卡片（16:9 缩略图 + 底部进度条，点击续播）。
+ * opts: { onPlay, onClear }
+ */
+export function continueCard(item, opts = {}) {
+  const progress =
+    item.durationMs > 0 && item.watchPositionMs > 0
+      ? Math.min(100, Math.round((item.watchPositionMs / item.durationMs) * 100))
+      : 0;
+
+  return h('div', { class: 'continue-card' }, [
+    h('button', {
+      type: 'button',
+      class: 'continue-thumb',
+      title: `${item.fanha} · 继续播放`,
+      onclick: () => opts.onPlay?.(item),
+    }, [
+      item.coverUrl
+        ? h('img', {
+          src: item.coverUrl,
+          alt: item.fanha,
+          loading: 'lazy',
+          onerror: (e) => { e.target.style.visibility = 'hidden'; },
+        })
+        : h('div', { class: 'placeholder' }, [h('span', { class: 'ms', text: 'movie' })]),
+      h('span', { class: 'fanha-chip mono', text: item.fanha }),
+      h('span', { class: 'continue-play', 'aria-hidden': 'true' }, [
+        h('span', { class: 'ms', text: 'play_arrow' }),
+      ]),
+      h('div', { class: 'continue-bar' }, [h('div', { style: `width:${progress}%` })]),
+    ]),
+    h('div', { class: 'continue-body' }, [
+      h('div', { class: 'continue-title', text: item.title || '（无标题）' }),
+      h('div', { class: 'continue-meta mono' }, [
+        h('span', { text: `${formatTimecode(item.watchPositionMs)} / ${formatTimecode(item.durationMs)}` }),
+        h('span', { class: 'continue-pct', text: `${progress}%` }),
+      ]),
+      h('div', { class: 'continue-foot' }, [
+        h('span', { class: 'muted', text: item.actress || '—' }),
+        h('span', { class: 'muted', text: item.lastPlayedAt ? formatRelativeTime(item.lastPlayedAt) : '' }),
+        opts.onClear
+          ? h('button', {
+            type: 'button',
+            class: 'btn ghost small continue-clear',
+            title: '清除进度',
+            onclick: () => opts.onClear?.(item),
+          }, [h('span', { class: 'ms', text: 'clear_all' }), h('span', { text: '清除' })])
+          : null,
+      ]),
+    ]),
+  ]);
 }
 
 /** 历史列表行卡片（横幅） */

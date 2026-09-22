@@ -2,7 +2,6 @@ import { call } from '../api.js';
 import { clear, h, reportError, setBusy, toast } from '../ui.js';
 import { emptyState, pageHeader } from '../components/shell.js';
 import { applyTheme } from '../theme.js';
-import { setScraperStatus } from '../ui.js';
 import { resetOnboarding } from './Onboarding.js';
 
 /**
@@ -174,10 +173,6 @@ export function createSettingsView(state, section) {
       setBusy(true);
       try {
         const health = await call('ScraperHealth');
-        setScraperStatus(
-          health.chrome?.found === false ? 'error' : 'ready',
-          health.chrome?.found === false ? '缺少 Chrome' : `刮削器 ${health.scraper || '就绪'}`,
-        );
         healthBox.append(h('div', { class: 'detail-rows' }, [
           h('div', { class: 'detail-row' }, ['刮削器：', h('b', { text: health.scraper || '—' })]),
           h('div', { class: 'detail-row' }, ['Python：', h('b', { text: health.python || '—' })]),
@@ -186,7 +181,6 @@ export function createSettingsView(state, section) {
           h('div', { class: 'detail-row' }, ['驱动：', h('b', { text: health.driver?.ready ? '就绪' : (health.driver?.writable ? '首次刮削时下载' : '目录不可写') })]),
         ]));
       } catch (error) {
-        setScraperStatus('unknown', '刮削器未配置');
         healthBox.append(h('div', { class: 'badge broken', text: '自检失败' }));
         healthBox.append(h('div', { class: 'panel-desc', text: error?.message || String(error) }));
         healthBox.append(h('div', { class: 'panel-desc', style: 'margin-top:6px', text: '请确认已打包 scraper.exe，或在上方手动指定路径。' }));
