@@ -221,6 +221,9 @@ func (r *Runner) Inspect(ctx context.Context, subcommand string, target any) err
 	}
 
 	cmd := exec.CommandContext(ctx, r.ExePath, subcommand)
+	// 与 Run 对齐：分组属性同样要设。漏掉它的直接后果是 doctor 每次
+	// 都在 Windows 上闪出一个控制台窗口（GUI 宿主没有控制台可继承）。
+	setProcAttr(cmd)
 	// 与 Run 保持一致：工作目录与环境都对齐，避免「scrape 能跑、doctor 不能跑」。
 	cmd.Dir = r.WorkDir
 	cmd.Env = append(os.Environ(), r.Env...)

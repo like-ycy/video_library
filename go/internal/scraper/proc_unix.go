@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os/exec"
 	"syscall"
+
+	"videolib/internal/spawn"
 )
 
 func newProcessTree() processTree { return unixProcessTree{} }
@@ -35,4 +37,6 @@ func (unixProcessTree) release() {}
 func setProcAttr(cmd *exec.Cmd) {
 	// Setpgid 让子进程成为新进程组的组长，父进程因此可以一次信号杀掉全组。
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// 非 Windows 上是空操作；调用点只写一次，避免两套启动属性逻辑。
+	spawn.Hide(cmd)
 }

@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"videolib/internal/spawn"
 	"videolib/internal/toolpath"
 )
 
@@ -80,6 +81,8 @@ func (p *Prober) Probe(ctx context.Context, videoPath string) (MediaInfo, error)
 		"-show_streams",
 		videoPath,
 	)
+	// ffprobe 是控制台程序：GUI 宿主下不隐藏就会导入/刮削时几千次黑框闪烁。
+	spawn.Hide(cmd)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

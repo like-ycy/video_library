@@ -10,6 +10,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"videolib/internal/spawn"
 )
 
 func newProcessTree() processTree { return &windowsProcessTree{} }
@@ -96,4 +98,7 @@ func setProcAttr(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP,
 	}
+	// GUI 宿主下启动控制台子进程必须显式隐藏窗口，否则每次 doctor/刮削
+	// 都闪一个黑框。合并而非覆盖：上面的进程组标志要保留。
+	spawn.Hide(cmd)
 }

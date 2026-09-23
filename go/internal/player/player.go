@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"videolib/internal/spawn"
 )
 
 // Open 打开视频。
@@ -75,11 +77,13 @@ func openWithSystemDefault(videoPath string) error {
 		// 空的窗口标题参数是必需的：start 会把第一个带引号的参数当作标题，
 		// 否则含空格的路径会被当成标题，视频根本不会打开。
 		cmd = exec.Command("cmd", "/c", "start", "", videoPath)
-	case "darwin":
+		// cmd 是控制台程序，不隐藏必闪窗口；start 起的目标本身不受影响。
+		// 只对这里调 Hide：上面的播放器是 GUI 程序，SW_HIDE 会让它隐藏启动。	case "darwin":
 		cmd = exec.Command("open", videoPath)
 	default:
 		cmd = exec.Command("xdg-open", videoPath)
 	}
+	spawn.Hide(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("用系统默认程序打开 %s: %w", filepath.Base(videoPath), err)
 	}
