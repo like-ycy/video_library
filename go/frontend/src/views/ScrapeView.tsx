@@ -44,7 +44,8 @@ export function ScrapeView({
       .finally(() => {
         if (active) setLoading(false);
       });
-    call("ScraperHealth")
+    // 进页面查一次即可：结果有后端 TTL 缓存兜底，不必每次重跑 doctor。
+    call("ScraperHealth", false)
       .then((value) => {
         if (active) {
           setHealth(value);

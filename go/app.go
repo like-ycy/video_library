@@ -42,6 +42,14 @@ const (
 // 很大，逐行发事件会让 WebView 忙于渲染日志而卡住界面。
 const logRingSize = 500
 
+// healthCacheTTL 是 doctor 结果的复用窗口。
+//
+// doctor 是一次 Python 冷启动（秒级），而设置页与环境诊断页每次进入都会查
+// 一遍，连着点开就是两次冷启动。环境不会在半分钟内自己变化；真正会变的
+// （scraper 路径）由缓存键兜住，路径一改立刻失效，不必等 TTL。
+// 主动刷新走 force，不受这个窗口约束。
+const healthCacheTTL = 30 * time.Second
+
 // App 是暴露给前端的绑定对象。
 //
 // 这里只做四件事：校验参数、调用领域模块、把结果转成前端可用的形状、发事件。
@@ -60,6 +68,13 @@ type App struct {
 	scrapeMu     sync.Mutex
 	scrapeCancel context.CancelFunc
 	scraping     bool
+
+	// doctor 结果缓存。单独一把锁：它在 a.mu 之外也可能被读（ScraperHealth
+	// 运行期间不会持有 a.mu），混进 a.mu 会让「查环境」这件事被长操作挡住。
+	healthMu    sync.Mutex
+	healthAt    time.Time
+	healthKey   string
+	healthValue scraper.Health
 
 	logMu   sync.Mutex
 	logRing []string
@@ -670,12 +685,23 @@ func (a *App) GetScrapeLog() []string {
 }
 
 // ScraperHealth 检查刮削器环境，供 UI 在开始前引导用户。
-func (a *App) ScraperHealth() (scraper.Health, error) {
+//
+// force 为 true 时绕过 TTL 缓存（设置页的「重新自检」「重新检查」按钮）；
+// 为 false 时命中窗口内的上次结果，避免每次进页面都冷启动一次 Python。
+// 缓存键是 scraper 路径：换了路径不再命中，即便仍在 TTL 内。
+// 出错不缓存 —— 异常状态必须每次都被看见，不能被上一次的结果盖住。
+func (a *App) ScraperHealth(force bool) (scraper.Health, error) {
 	a.rebuildRunner()
-	if a.runner.ExePath == "" {
+	exePath := a.runner.ExePath
+	if exePath == "" {
 		return scraper.Health{}, errors.New(
 			"未找到刮削器组件。请先运行 tools/build.sh 完成打包，" +
 				"或在配置中指定 scraper_path")
+	}
+	if !force {
+		if cached, ok := a.cachedHealth(exePath); ok {
+			return cached, nil
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
@@ -689,7 +715,26 @@ func (a *App) ScraperHealth() (scraper.Health, error) {
 		return health, fmt.Errorf("刮削器协议版本为 v%d，本程序需要 v%d，请重新打包刮削组件",
 			health.V, scraper.ProtocolVersion)
 	}
+	a.storeHealth(exePath, health)
 	return health, nil
+}
+
+// cachedHealth 取仍在 TTL 内、且键匹配的 doctor 结果。
+func (a *App) cachedHealth(key string) (scraper.Health, bool) {
+	a.healthMu.Lock()
+	defer a.healthMu.Unlock()
+	if a.healthKey == key && time.Since(a.healthAt) < healthCacheTTL {
+		return a.healthValue, true
+	}
+	return scraper.Health{}, false
+}
+
+func (a *App) storeHealth(key string, health scraper.Health) {
+	a.healthMu.Lock()
+	defer a.healthMu.Unlock()
+	a.healthKey = key
+	a.healthAt = time.Now()
+	a.healthValue = health
 }
 
 // ── 内部实现 ──────────────────────────────────────────────────────────────

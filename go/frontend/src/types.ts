@@ -136,11 +136,11 @@ export interface Backend {
   CancelScrape(): Promise<boolean>;
   ScrapeStatus(): Promise<boolean>;
   GetScrapeLog(): Promise<string[]>;
-  ScraperHealth(): Promise<Health>;
+  ScraperHealth(force: boolean): Promise<Health>;
   GetConfig(): Promise<Config>;
   SaveConfig(config: Config): Promise<Config>;
   Paths(): Promise<Paths>;
-  DiagnoseEnv(): Promise<EnvReport>;
+  DiagnoseEnv(force: boolean): Promise<EnvReport>;
   PickExecutable(title: string): Promise<string>;
   GetSystemAppearance(): Promise<string>;
 }

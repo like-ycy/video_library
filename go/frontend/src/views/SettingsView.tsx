@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -44,10 +44,15 @@ export function SettingsView({
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [version, setVersion] = useState(0);
+  // 本次请求是否强制绕过后端的 doctor 结果缓存。用 ref 而不是 state：
+  // 置位本身不该触发 effect，只对「点击按钮后这一次」生效。
+  const forceRef = useRef(false);
   const [preference, setPreference] = useState(getThemePreference());
   const { run, notify } = useFeedback();
   useEffect(() => {
     let active = true;
+    const force = forceRef.current;
+    forceRef.current = false;
     setLoadError("");
     if (["scraper", "player", "appearance"].includes(section))
       call("GetConfig")
@@ -66,7 +71,7 @@ export function SettingsView({
           if (active) setLoadError(String(error));
         });
     if (section === "scraper")
-      call("ScraperHealth")
+      call("ScraperHealth", force)
         .then((value) => {
           if (active) {
             setHealth(value);
@@ -77,7 +82,7 @@ export function SettingsView({
           if (active) setHealthError(String(error));
         });
     if (section === "env")
-      call("DiagnoseEnv")
+      call("DiagnoseEnv", force)
         .then((value) => {
           if (active) setReport(value);
         })
@@ -300,7 +305,10 @@ export function SettingsView({
               <CardContent>
                 <Button
                   variant="secondary"
-                  onClick={() => setVersion((n) => n + 1)}
+                  onClick={() => {
+                    forceRef.current = true;
+                    setVersion((n) => n + 1);
+                  }}
                 >
                   重新自检
                 </Button>
@@ -400,7 +408,12 @@ export function SettingsView({
             </CardHeader>
             <CardContent>
               <div className="flex gap-2 mb-4">
-                <Button onClick={() => setVersion((n) => n + 1)}>
+                <Button
+                  onClick={() => {
+                    forceRef.current = true;
+                    setVersion((n) => n + 1);
+                  }}
+                >
                   重新检查
                 </Button>
                 <Button

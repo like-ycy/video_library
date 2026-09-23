@@ -133,7 +133,9 @@ type EnvReport struct {
 }
 
 // DiagnoseEnv 运行环境自检。
-func (a *App) DiagnoseEnv() EnvReport {
+//
+// force 透传给 ScraperHealth，语义一致：主动刷新跳过缓存。
+func (a *App) DiagnoseEnv(force bool) EnvReport {
 	report := EnvReport{
 		GoVersion:      goRuntime.Version(),
 		Platform:       goRuntime.GOOS + "/" + goRuntime.GOARCH,
@@ -156,7 +158,7 @@ func (a *App) DiagnoseEnv() EnvReport {
 
 	report.ScraperExeOK = report.ScraperExePath != ""
 	if report.ScraperExeOK {
-		health, err := a.ScraperHealth()
+		health, err := a.ScraperHealth(force)
 		if err != nil {
 			report.ScraperError = err.Error()
 			if health.Scraper != "" {

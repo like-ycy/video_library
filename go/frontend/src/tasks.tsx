@@ -140,7 +140,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     if (!stems.length) throw new Error("请先选择条目");
     starting.current = true;
     try {
-      const health = await call("ScraperHealth");
+      const health = await call("ScraperHealth", true);
       if (!health.chrome.found) throw new Error("未找到 Chrome，请先安装");
       dispatch({ type: "start", libraryId: id, total: stems.length });
       await call("StartScrape", id, stems, force);
