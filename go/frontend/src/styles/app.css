@@ -1,9 +1,3 @@
-@import url('../../assets/fonts/fonts.css');
-@import url('./tokens.css');
-@import url('./shell.css');
-@import url('./components.css');
-@import url('./views.css');
-
 *,
 *::before,
 *::after {

@@ -3,8 +3,8 @@
   "name": "videolib",
   "outputfilename": "VideoLib",
   "frontend:dir": "frontend",
-  "frontend:install": "echo no frontend dependencies",
-  "frontend:build": "echo no frontend build step",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
   "author": {
     "name": "videolib"
   },
