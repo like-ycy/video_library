@@ -11,7 +11,6 @@ import (
 	"videolib/internal/appearance"
 	"videolib/internal/config"
 	"videolib/internal/index"
-	"videolib/internal/probe"
 	"videolib/internal/scraper"
 )
 
@@ -74,7 +73,7 @@ func (a *App) SaveConfig(dto ConfigDTO) (ConfigDTO, error) {
 	}
 
 	a.mu.Lock()
-	a.prober = probe.New(cfg.FFprobePath, 4)
+	a.resolveFFprobe()
 	a.mu.Unlock()
 	a.rebuildRunner()
 
@@ -147,8 +146,10 @@ func (a *App) DiagnoseEnv() EnvReport {
 		report.ConfigDir = dir
 	}
 
+	// 每次诊断都重新解析：PATH 可能是 App 启动之后才改的，
+	// 「重新检查」按钮若只读上次启动的结果，会把新改好的 PATH 报成未找到。
 	a.mu.Lock()
-	ffprobe := a.prober.Path()
+	ffprobe := a.resolveFFprobe()
 	a.mu.Unlock()
 	report.FFprobePath = ffprobe
 	report.FFprobeOK = ffprobe != ""

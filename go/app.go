@@ -76,18 +76,19 @@ func NewApp() (*App, error) {
 		log.Printf("警告：无法写入配置文件：%v", err)
 	}
 
-	ffprobePath := probe.Locate(cfg.FFprobePath)
+	app := &App{
+		cfg:     cfg,
+		stores:  make(map[string]*index.Store),
+		runner:  &scraper.Runner{Site: "javlibrary"},
+		logRing: make([]string, 0, logRingSize),
+	}
+	app.mu.Lock()
+	ffprobePath := app.resolveFFprobe()
+	app.mu.Unlock()
 	if ffprobePath == "" {
 		log.Printf("警告：未找到 ffprobe，视频时长与编码信息将不可用")
 	}
-
-	return &App{
-		cfg:     cfg,
-		stores:  make(map[string]*index.Store),
-		prober:  probe.New(ffprobePath, 4),
-		runner:  &scraper.Runner{Site: "javlibrary"},
-		logRing: make([]string, 0, logRingSize),
-	}, nil
+	return app, nil
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -166,6 +167,25 @@ func (a *App) resolveScraperPath() string {
 		return found
 	}
 	return ""
+}
+
+// resolveFFprobe 按当前配置重新定位 ffprobe 并重建 Prober，返回所用路径。
+// 调用方必须持有 a.mu。
+//
+// 构造 Prober 只有这一处入口（启动、保存设置、环境诊断都走它）：
+// ffprobe 的实际路径是「配置 → 标准位置 → PATH」一次完整解析的结果，
+// 直接拿 cfg.FFprobePath 构造就是第二套状态源。设置页没有 ffprobe 输入框，
+// 这一项恒为空，于是用户每保存一次任意设置，PATH 里找到的那份就被丢掉，
+// 诊断显示「未找到」—— 而 scraper 每次都完整解析，同一个页面上两个工具
+// 的表现因此对不上。
+func (a *App) resolveFFprobe() string {
+	path := probe.Locate(a.cfg.FFprobePath)
+	// 路径没变就不重建：Prober 内含并发信号量，导入进行中被替换会让
+	// 新旧两个各带 4 个额度的信号量同时生效，瞬时并发翻倍。
+	if a.prober == nil || a.prober.Path() != path {
+		a.prober = probe.New(path, 4)
+	}
+	return path
 }
 
 // ── 媒体服务 ──────────────────────────────────────────────────────────────

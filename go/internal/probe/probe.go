@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -95,7 +96,8 @@ func (p *Prober) Probe(ctx context.Context, videoPath string) (MediaInfo, error)
 
 // Locate 定位 ffprobe。
 //
-// 顺序：显式配置 → 标准位置（见 internal/toolpath）→ 相对当前工作目录 → PATH。
+// 顺序：可用的显式配置 → 标准位置（见 internal/toolpath）→ 相对当前工作目录 → PATH。
+// 显式配置若指向不存在/不可执行的文件，按不可用处理并继续探测，同时记日志。
 //
 // 随包分发的那份要优先于 PATH，否则结果会随用户装了哪个版本的 ffmpeg 而变。
 // 两种布局都要认：分发布局是 <App>/tools/ffprobe.exe，开发布局是
@@ -106,7 +108,12 @@ func (p *Prober) Probe(ctx context.Context, videoPath string) (MediaInfo, error)
 // 它排在可执行文件之后，因为由快捷方式启动的 App 工作目录并不是安装目录。
 func Locate(configured string) string {
 	if configured != "" {
-		return configured
+		if _, err := exec.LookPath(configured); err == nil {
+			return configured
+		}
+		// 配置过但已失效（卸载、换盘符、手输错）。报出来再走自动探测：
+		// 直接返回它，对外只会表现为「时长一直读不出来」，看不出跟配置项有关。
+		log.Printf("警告：配置的 ffprobe 路径 %s 不可用，转为自动探测", configured)
 	}
 	name := toolpath.Name("ffprobe")
 
