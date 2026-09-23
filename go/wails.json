@@ -12,5 +12,7 @@
     "productName": "视频库",
     "productVersion": "0.1.0",
     "comments": "本地视频库：刮削元数据 + 浏览观看"
-  }
+  },
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto"
 }

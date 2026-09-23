@@ -14,15 +14,9 @@ import (
 	"videolib/internal/media"
 )
 
-// 嵌入整个 frontend 目录。
+// 仅嵌入 Vite 构建产物，避免分发源码和 node_modules。
 //
-// 用 all: 前缀而不是默认行为：默认规则会跳过以 _ 或 . 开头的文件，
-// 而前端资源里一旦出现这类文件，症状是"运行时才 404"，很难联想到打包规则。
-//
-// 这个项目没有前端构建步骤（不用 npm、不用打包器），frontend/ 里的文件就是
-// 最终产物，因此直接嵌入整个目录而不是 frontend/dist。
-//
-//go:embed all:frontend
+//go:embed all:frontend/dist
 var embeddedFrontend embed.FS
 
 func main() {
@@ -32,7 +26,7 @@ func main() {
 	}
 	defer app.Close()
 
-	frontend, err := fs.Sub(embeddedFrontend, "frontend")
+	frontend, err := fs.Sub(embeddedFrontend, "frontend/dist")
 	if err != nil {
 		log.Fatalf("加载前端资源：%v", err)
 	}

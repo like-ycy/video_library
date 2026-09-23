@@ -7,7 +7,7 @@
  * - config.json 的 theme 在启动时仅作 localStorage 缺失时的迁移来源
  */
 
-import { call } from './api.js';
+import { call } from './api';
 
 const STORAGE_KEY = 'cinevault.theme';
 const PREFERENCES = new Set(['system', 'dark', 'light']);
@@ -15,7 +15,7 @@ const PREFERENCES = new Set(['system', 'dark', 'light']);
 export function getThemePreference() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (PREFERENCES.has(raw)) return raw;
+    if (raw && PREFERENCES.has(raw)) return raw;
   } catch {
     /* 隐私模式等场景忽略 */
   }
@@ -56,6 +56,7 @@ export async function resolveSystemTheme() {
 export function applyTheme(resolved) {
   const value = resolved === 'light' ? 'light' : 'dark';
   document.documentElement.dataset.theme = value;
+  document.documentElement.classList.toggle('dark', value === 'dark');
   document.documentElement.style.colorScheme = value;
   return value;
 }

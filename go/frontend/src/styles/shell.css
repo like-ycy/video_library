@@ -65,7 +65,6 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
 .titlebar select,
 .titlebar kbd,
 .library-select-wrap,
-.btn,
 .win-ctl {
   /* 自定义属性会继承：子控件必须显式 no-drag，否则点按钮也会拖窗 */
   --wails-draggable: no-drag;
