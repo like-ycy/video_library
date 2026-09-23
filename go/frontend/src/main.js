@@ -74,8 +74,11 @@ function syncThemeIcon() {
   if (!el) return;
   const pref = document.documentElement.dataset.themePref || 'system';
   // light / dark / system 三态图标
-  el.textContent = pref === 'light' ? 'light_mode' : pref === 'dark' ? 'dark_mode' : 'brightness_auto';
-  if (btn) btn.title = themeLabel(pref);
+  el.textContent = pref === 'light' ? 'light_mode' : pref === 'dark' ? 'dark_mode' : 'desktop_windows';
+  if (btn) {
+    btn.title = `${themeLabel(pref)}（点击切换）`;
+    btn.setAttribute('aria-label', themeLabel(pref));
+  }
 }
 
 function wireTheme() {
