@@ -6,6 +6,11 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
   Input,
   Label,
 } from "xwang-ui";
@@ -45,6 +50,10 @@ export function SettingsView({
   const [saving, setSaving] = useState(false);
   const [version, setVersion] = useState(0);
   const [appVersion, setAppVersion] = useState("");
+  // 待确认的破坏性操作。用 Dialog 而不是 window.confirm：无边框窗口里
+  // 原生 confirm 可能不弹出，表现为点击无反应。
+  const [pendingRemove, setPendingRemove] = useState<Library | null>(null);
+  const [pendingRebuild, setPendingRebuild] = useState<Library | null>(null);
   // 本次请求是否强制绕过后端的 doctor 结果缓存。用 ref 而不是 state：
   // 置位本身不该触发 effect，只对「点击按钮后这一次」生效。
   const forceRef = useRef(false);
@@ -189,34 +198,14 @@ export function SettingsView({
                         size="sm"
                         variant="secondary"
                         disabled={!lib.available}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              "重建索引会重扫，收藏、评分和进度按业务键保留。继续？",
-                            )
-                          )
-                            void run("重建失败", async () => {
-                              await call("RebuildIndex", lib.id);
-                              notify("重建完成", "ok");
-                            });
-                        }}
+                        onClick={() => setPendingRebuild(lib)}
                       >
                         重建索引
                       </Button>
                       <Button
                         size="sm"
                         variant="danger"
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              "移出视频库不会删除磁盘文件，仅从配置移除。继续？",
-                            )
-                          )
-                            void run("移除失败", async () => {
-                              await call("RemoveLibrary", lib.id);
-                              await refreshLibraries();
-                            });
-                        }}
+                        onClick={() => setPendingRemove(lib)}
                       >
                         移出
                       </Button>
@@ -228,6 +217,81 @@ export function SettingsView({
             <p className="text-muted">
               移出视频库不会删除磁盘文件，重新添加同一目录即可恢复浏览。
             </p>
+            <Dialog
+              open={pendingRebuild !== null}
+              onOpenChange={(open) => {
+                if (!open) setPendingRebuild(null);
+              }}
+            >
+              <DialogContent>
+                <DialogTitle>重建索引</DialogTitle>
+                <DialogDescription>
+                  重建索引会重扫，收藏、评分和进度按业务键保留。继续？
+                </DialogDescription>
+                <DialogFooter>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setPendingRebuild(null)}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      const target = pendingRebuild;
+                      if (!target) return;
+                      setPendingRebuild(null);
+                      void run("重建失败", async () => {
+                        await call("RebuildIndex", target.id);
+                        notify("重建完成", "ok");
+                      });
+                    }}
+                  >
+                    继续
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+            <Dialog
+              open={pendingRemove !== null}
+              onOpenChange={(open) => {
+                if (!open) setPendingRemove(null);
+              }}
+            >
+              <DialogContent>
+                <DialogTitle>移出视频库</DialogTitle>
+                <DialogDescription>
+                  移出视频库不会删除磁盘文件，仅从配置移除。继续？
+                  {pendingRemove && (
+                    <span className="mono mt-2 block break-all">
+                      {pendingRemove.root}
+                    </span>
+                  )}
+                </DialogDescription>
+                <DialogFooter>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setPendingRemove(null)}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={() => {
+                      const target = pendingRemove;
+                      if (!target) return;
+                      setPendingRemove(null);
+                      void run("移除失败", async () => {
+                        await call("RemoveLibrary", target.id);
+                        await refreshLibraries();
+                        notify("已移出视频库", "ok");
+                      });
+                    }}
+                  >
+                    移出
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </>
         )}
         {section === "scraper" && config && (
