@@ -6,3 +6,34 @@
 @import "./styles/shell.css" layer(components);
 @import "./styles/page.css" layer(components);
 @import "./styles/views.css" layer(components);
+
+/*
+ * shell.css 在 components 层，会输给 xwang-ui Input 的 utilities 层
+ * padding（px-2.5=10px），导致搜索图标与 placeholder 重叠。
+ * 放在全部 @layer 之后的无层规则里，才能稳定盖住组件 utility。
+ */
+.library-select-wrap [data-slot="select-trigger"] {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  height: auto;
+  padding: 0;
+  width: auto;
+  flex: 1;
+  min-width: 0;
+}
+
+.library-select-wrap [data-slot="select-trigger"]:focus-visible,
+.library-select-wrap [data-slot="select-trigger"][data-state="open"] {
+  border-color: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.global-search input {
+  padding: 0 56px 0 32px;
+}
+
+.global-search .ms {
+  z-index: 1;
+}
