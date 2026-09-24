@@ -102,9 +102,21 @@ checkout
     key: uv-${{ runner.os }}-${{ hashFiles('python/uv.lock') }}
 ```
 
-**版本号注入**：构建时通过 `-ldflags "-X .../version.Version=${GITHUB_REF_NAME}"`
-把 tag 写入 Go 二进制。同时更新 `wails.json` 的 `productVersion`（Wails 用它
-写 Windows 版本资源，影响文件属性对话框中显示的版本）。
+**版本号注入**：同一份 `VERSION`（tag 去掉 `v`；非 tag 冒烟用测试版本 `0.1.0`）
+在构建前写入三处，避免 UI / 文件属性 / 刮削器自述不一致：
+
+1. `-ldflags "-X videolib/internal/version.Version=${VERSION}"` → Go 二进制
+   （前端 `GetAppVersion`、顶栏与关于页读这里）
+2. `wails.json` 的 `productVersion` → Windows 文件属性 / macOS Info.plist
+3. `python/src/scraper/_version.py` 的 `__version__` → PyInstaller 打包的刮削器
+   （`scraper version` / 设置页环境诊断显示这里）
+
+本地 `tools/build.sh` 不读 tag；App 默认测试版本 `0.1.0`（`version.go`），
+刮削器默认 `0.4.3`（`_version.py`）。需要指定时：
+
+```bash
+VIDEOLIB_VERSION=1.2.3 SCRAPER_VERSION=1.2.3 tools/build.sh
+```
 
 **产物自检**：打包完成后立即运行 `scraper.exe version` 和 `scraper.exe doctor`，
 在 CI 阶段就暴露环境问题（如 seleniumbase 资源缺失），而不是等用户拿到产物
@@ -164,8 +176,11 @@ scraper.exe，而不是提示"运行 build.sh"。
 - Git tag：`v1.2.3`（语义化版本）
 - Go 二进制内嵌版本：`1.2.3`（通过 ldflags）
 - wails.json productVersion：`1.2.3`（构建时写入）
+- scraper `__version__`：`1.2.3`（构建时写入 `_version.py`）
+- 前端顶栏 / 关于页：读 `GetAppVersion`（来自上述 Go 内嵌版本）
 - Release 标题：`v1.2.3`
-- 资产文件名：固定 `video-library.exe` / `scraper.exe`（不含版本号，便于自动更新器按固定名下载）
+- 资产文件名：带平台后缀，如 `VideoLib_1.2.3_windows_amd64.zip`
+- 本地手动打包：App 默认 `0.1.0`，scraper 默认 `0.4.3`（测试版本号）
 
 ## 7. 自动更新（未来）
 

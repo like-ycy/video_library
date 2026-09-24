@@ -142,6 +142,7 @@ export interface Backend {
   Paths(): Promise<Paths>;
   DiagnoseEnv(force: boolean): Promise<EnvReport>;
   PickExecutable(title: string): Promise<string>;
+  GetAppVersion(): Promise<string>;
   GetSystemAppearance(): Promise<string>;
 }
 export interface ScrapeEvent {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	goRuntime "runtime"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -12,6 +13,7 @@ import (
 	"videolib/internal/config"
 	"videolib/internal/index"
 	"videolib/internal/scraper"
+	"videolib/internal/version"
 )
 
 // ConfigDTO 是给前端的可编辑配置（不含 libraries，库单独管理）。
@@ -78,6 +80,12 @@ func (a *App) SaveConfig(dto ConfigDTO) (ConfigDTO, error) {
 	a.rebuildRunner()
 
 	return a.dtoFromConfig(cfg), nil
+}
+
+// GetAppVersion 返回当前软件版本号。
+// 本地默认测试版本；CI 打 tag 时经 -ldflags 注入。
+func (a *App) GetAppVersion() string {
+	return strings.TrimSpace(version.Version)
 }
 
 // GetSystemAppearance 返回操作系统当前外观。

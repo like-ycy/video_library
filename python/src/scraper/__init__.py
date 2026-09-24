@@ -12,7 +12,6 @@
 """
 
 from . import protocol  # noqa: F401  必须最先执行：建立 stdout 隔离
-
-__version__ = "0.1.0"
+from ._version import __version__  # noqa: F401
 
 __all__ = ["__version__", "protocol"]

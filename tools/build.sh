@@ -8,6 +8,13 @@
 # --go 适用于改样式/改 Go 后快速查看：复用 tools/bin/scraper 里已有的刮削器，
 # 不再每次跑一遍 Python 打包。首次完整构建仍用默认无参方式。
 #
+# 版本号（本地测试版本，与 CI 推 tag 注入无关）：
+#   App     → go/internal/version/version.go 的 Version（默认 0.1.0）
+#             可选：VIDEOLIB_VERSION=1.2.3 tools/build.sh
+#             或 wails build -ldflags "-X videolib/internal/version.Version=1.2.3"
+#   scraper → python/src/scraper/_version.py（默认 0.4.3）
+#             可选：SCRAPER_VERSION=1.2.3 tools/build.sh
+#
 # 硬约束（与 CI / architecture.md §9 一致）：
 #   * PyInstaller 不能交叉编译 —— scraper 只能是本机架构。
 #   * 本机自测出当前架构整包即可；Windows / 另一架构走 CI。
@@ -18,6 +25,10 @@ set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# 本地可选注入；未设置时保持源码里的测试版本号。
+app_version="${VIDEOLIB_VERSION:-}"
+scraper_version="${SCRAPER_VERSION:-}"
+
 build_python=1
 for arg in "$@"; do
     case "$arg" in
@@ -25,7 +36,7 @@ for arg in "$@"; do
             build_python=0
             ;;
         -h | --help)
-            sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         *)
@@ -56,6 +67,11 @@ if ((build_python)); then
     step=$((step + 1))
     echo
     echo "==> [$step/$step_total] 构建 Python 刮削器（本机架构）"
+    if [[ -n "$scraper_version" ]]; then
+        printf '__version__ = "%s"\n' "$scraper_version" \
+            > "$repo/python/src/scraper/_version.py"
+        echo "刮削器版本号已设为 $scraper_version"
+    fi
     cd "$repo/python"
     uv sync
     uv run pyinstaller scraper.spec --noconfirm
@@ -87,7 +103,12 @@ if ! command -v wails >/dev/null 2>&1; then
     echo "  go install github.com/wailsapp/wails/v2/cmd/wails@latest" >&2
     exit 1
 fi
-wails build -clean
+wails_args=(-clean)
+if [[ -n "$app_version" ]]; then
+    wails_args+=(-ldflags "-X videolib/internal/version.Version=${app_version}")
+    echo "App 版本号已设为 $app_version"
+fi
+wails build "${wails_args[@]}"
 echo "产物在 $repo/go/build/bin/"
 
 step=$((step + 1))

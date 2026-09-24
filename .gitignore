@@ -46,6 +46,11 @@ venv/
 # 每次构建都会重写，不入库。
 /go/frontend/wailsjs/
 
+# Vite 构建产物与 npm 依赖：均可由 package-lock 重建，不入库。
+/go/frontend/dist/
+/go/frontend/node_modules/
+/go/frontend/package.json.md5
+
 # wails build 的可执行产物。注意只忽略 bin/：
 # 同级的 appicon.png、darwin/Info.plist、windows/* 是构建必需的源文件。
 /go/build/bin/

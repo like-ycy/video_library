@@ -48,6 +48,7 @@ function Application() {
     libraryId: string;
   } | null>(null);
   const [version, setVersion] = useState(0);
+  const [appVersion, setAppVersion] = useState("");
   const [continueCount, setContinueCount] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
   const { run, notify } = useFeedback();
@@ -102,6 +103,11 @@ function Application() {
         }
       })
       .catch((error) => notify(`读取窗口平台失败：${String(error)}`, "error"));
+    call("GetAppVersion")
+      .then((value) => {
+        if (active) setAppVersion(value);
+      })
+      .catch(() => undefined);
     return () => {
       active = false;
       stopTheme();
@@ -212,7 +218,7 @@ function Application() {
         <div className="titlebar-left">
           <div className="brand-block">
             <span className="brand-name">视频库</span>
-            <span className="brand-version mono">0.1.0</span>
+            <span className="brand-version mono">{appVersion || "0.1.0"}</span>
           </div>
           <span className="titlebar-sep" />
           <div className="library-select-wrap">

@@ -70,6 +70,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # 版本号：推 tag 时取 tag 去掉 v；workflow_dispatch 冒烟用本地测试版本 0.1.0。
+      # 同一份 VERSION 同时注入刮削器 _version.py、App 的 ldflags、wails.json
+      # productVersion，避免三处显示不一致。
+      - name: 解析版本号
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.1.0" >> "$GITHUB_OUTPUT"
+          fi
+
       # Windows runner 自带的 Go 版本与 go.mod 不一定对齐；与 macOS job 一样
       # 按 go.mod 锁定，避免「本机过了、CI 挂了」的版本漂移。
       #
@@ -91,6 +104,13 @@ jobs:
       - name: 同步依赖
         working-directory: python
         run: uv sync
+
+      - name: 注入刮削器版本号
+        shell: bash
+        run: |
+          # 只改工作区源文件，不提交；PyInstaller 打进产物的 __version__ 即来自此。
+          printf '__version__ = "%s"\n' "${{ steps.ver.outputs.version }}" \
+            > python/src/scraper/_version.py
 
       - name: 打包刮削器（PyInstaller onedir）
         working-directory: python
@@ -123,6 +143,27 @@ jobs:
           # YAML 的双引号会处理转义序列，"\g" 这类会直接解析失败。
           "$(go env GOPATH)\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
+      - name: 注入 App 版本号
+        shell: bash
+        working-directory: go
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          # wails.json productVersion → Windows 文件属性 / macOS Info.plist
+          python - "$VERSION" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          version = sys.argv[1]
+          path = Path("wails.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          data.setdefault("info", {})["productVersion"] = version
+          path.write_text(
+              json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
       - name: 打包桌面 App
         working-directory: go
         # -webview2 download 是 Wails 的**默认**策略，写出来只为自解释，并不改变产物：
@@ -131,7 +172,14 @@ jobs:
         # !wv2runtime.error && !wv2runtime.browser && !wv2runtime.embed）。
         # 真正把引导程序打进产物的是 embed，代价是体积增加。
         # Win10 21H2+ 与 Win11 已自带 WebView2，所以沿用默认策略。
-        run: wails build -platform windows/amd64 -webview2 download -clean
+        #
+        # -ldflags 把 tag（或冒烟测试版本）写进 videolib/internal/version.Version，
+        # 前端 GetAppVersion 读的就是这个值。
+        # 必须用 bash：默认 pwsh 不认行尾反斜杠续行。
+        shell: bash
+        run: |
+          wails build -platform windows/amd64 -webview2 download -clean \
+            -ldflags "-X videolib/internal/version.Version=${{ steps.ver.outputs.version }}"
 
       - name: 组装分发目录
         shell: pwsh
@@ -169,10 +217,7 @@ jobs:
       - name: 打包上传物
         shell: pwsh
         run: |
-          $version = "snapshot"
-          if ($env:GITHUB_REF -like "refs/tags/*") {
-            $version = $env:GITHUB_REF_NAME.TrimStart("v")
-          }
+          $version = "${{ steps.ver.outputs.version }}"
           New-Item -ItemType Directory -Path out -Force | Out-Null
           $pkg = Join-Path $PWD ("out\VideoLib_{0}_windows_amd64.zip" -f $version)
           # 顶层保留 VideoLib\ 目录，与 macOS tar -C dist VideoLib 对齐。
@@ -209,6 +254,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: 解析版本号
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.1.0" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 安装 Go
         uses: actions/setup-go@v7
         with:
@@ -227,6 +282,12 @@ jobs:
         working-directory: python
         run: uv sync
 
+      - name: 注入刮削器版本号
+        shell: bash
+        run: |
+          printf '__version__ = "%s"\n' "${{ steps.ver.outputs.version }}" \
+            > python/src/scraper/_version.py
+
       - name: 打包刮削器（PyInstaller onedir）
         working-directory: python
         run: uv run pyinstaller scraper.spec --noconfirm
@@ -242,9 +303,31 @@ jobs:
           go install github.com/wailsapp/wails/v2/cmd/wails@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      - name: 注入 App 版本号
+        shell: bash
+        working-directory: go
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          python3 - "$VERSION" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          version = sys.argv[1]
+          path = Path("wails.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          data.setdefault("info", {})["productVersion"] = version
+          path.write_text(
+              json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
       - name: 打包桌面 App
         working-directory: go
-        run: wails build -platform "darwin/${{ matrix.goarch }}" -clean
+        run: |
+          wails build -platform "darwin/${{ matrix.goarch }}" -clean \
+            -ldflags "-X videolib/internal/version.Version=${{ steps.ver.outputs.version }}"
 
       - name: 组装分发目录
         run: |
@@ -276,10 +359,7 @@ jobs:
       - name: 打包上传物
         run: |
           mkdir -p out
-          version=snapshot
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            version="${GITHUB_REF_NAME#v}"
-          fi
+          version="${{ steps.ver.outputs.version }}"
           # .app 内大量可执行位与符号链接，zip 上传后容易丢权限；
           # 用 tar.gz 保留模式位，用户解开即可用。
           tar -czf "out/VideoLib_${version}_macos_${{ matrix.goarch }}.tar.gz" -C dist VideoLib

@@ -44,6 +44,7 @@ export function SettingsView({
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [version, setVersion] = useState(0);
+  const [appVersion, setAppVersion] = useState("");
   // 本次请求是否强制绕过后端的 doctor 结果缓存。用 ref 而不是 state：
   // 置位本身不该触发 effect，只对「点击按钮后这一次」生效。
   const forceRef = useRef(false);
@@ -54,6 +55,12 @@ export function SettingsView({
     const force = forceRef.current;
     forceRef.current = false;
     setLoadError("");
+    if (section === "about")
+      call("GetAppVersion")
+        .then((value) => {
+          if (active) setAppVersion(value);
+        })
+        .catch(() => undefined);
     if (["scraper", "player", "appearance"].includes(section))
       call("GetConfig")
         .then((value) => {
@@ -502,7 +509,9 @@ export function SettingsView({
             </CardHeader>
             <CardContent>
               <p>本地视频库：刮削元数据、浏览和观看。</p>
-              <p>App 版本：0.1.0 · 协议版本：1</p>
+              <p>
+                App 版本：{appVersion || "0.1.0"} · 协议版本：1
+              </p>
               <p>Go + Wails + React + Tailwind CSS</p>
               <p className="text-muted">
                 当前请手动更新应用，自动更新尚未提供。
