@@ -201,27 +201,43 @@ def _fetch_meta(target: Target, site: Site, cancel: threading.Event) -> VideoMet
 
     搜索页与详情页必须共用同一个会话：重建会话会丢掉已验证的 Cloudflare 通行
     状态，从而触发额外验证。这与原实现的行为一致。
+
+    SeleniumBase 的 SB(test=True) 在无 test_name 时会吞掉 with 体内的异常
+    （打印后直接 return）。因此 session 内只捕获、不外抛；所有失败在退出
+    with 之后再 raise，否则会静默落到 detail_html 未赋值的路径。
     """
     protocol.progress(target.fanha, "search", _PCT_SEARCH)
     search_url = site.search_url(target.fanha)
 
+    detail_html: str | None = None
+    pending: BaseException | None = None
+
     with open_session() as sb:
-        if cancel.is_set():
-            raise _CanceledError
+        try:
+            if cancel.is_set():
+                raise _CanceledError
 
-        search_html = fetch_html(sb, search_url)
-        if not search_html:
-            raise _FetchError("timeout", f"搜索页加载失败：{search_url}")
+            search_html = fetch_html(sb, search_url)
+            if not search_html:
+                raise _FetchError("timeout", f"搜索页加载失败：{search_url}")
 
-        detail_url = site.pick_detail_url(search_html)
-        if not detail_url:
-            # 搜索页没有详情链接，即站点无此记录 —— 重试也不会变好。
-            raise _FetchError("not_found", f"站点未收录：{target.fanha}")
+            detail_url = site.pick_detail_url(search_html)
+            if not detail_url:
+                # 搜索页没有详情链接，即站点无此记录 —— 重试也不会变好。
+                raise _FetchError("not_found", f"站点未收录：{target.fanha}")
 
-        protocol.progress(target.fanha, "detail", _PCT_DETAIL)
-        detail_html = fetch_html(sb, detail_url)
-        if not detail_html:
-            raise _FetchError("timeout", f"详情页加载失败：{detail_url}")
+            protocol.progress(target.fanha, "detail", _PCT_DETAIL)
+            detail_html = fetch_html(sb, detail_url)
+            if not detail_html:
+                raise _FetchError("timeout", f"详情页加载失败：{detail_url}")
+        except BaseException as exc:
+            pending = exc
+            detail_html = None
+
+    if pending is not None:
+        raise pending
+    if not detail_html:
+        raise _FetchError("timeout", f"详情页加载失败：{search_url}")
 
     meta = site.parse_detail(detail_html, target.fanha)
     if meta is None or not meta.is_usable():
