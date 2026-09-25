@@ -1,5 +1,19 @@
 """NDJSON 事件协议 —— 与 Go 侧之间的唯一通信通道。
 
+编码纪律：两个方向都要钉死
+--------------------------
+协议是 NDJSON，即 **UTF-8 字节**。进程的 locale 不能参与决定它怎么编解码，
+因为目标机（中文 Windows）的 locale 是 GBK：
+
+* **写出**：协议 JSON 用 ensure_ascii=False，中文是裸 UTF-8 字节，直接写二进制
+  buffer；日志走 stderr，单独 reconfigure 成 UTF-8。
+* **读入**：job 从 stdin 读，**固定按 UTF-8 解码**（`read_stdin_utf8`）。
+
+第二条不能省。Go 注入了 `PYTHONIOENCODING` / `PYTHONUTF8`，但那是进程级设置，
+有效性依赖启动环境（继承来的同名变量、用户手工跑 exe、别的启动器）；而 stdin
+一旦落到 locale 的 GBK 上，`D:\\迅雷下载\\...` 会被解成 `D:\\杩呴浄涓嬭浇\\...`
+这种**合法但错误**的字符串，`mkdir(parents=True)` 还会把它真的建出来。
+
 stdout 纪律
 -----------
 seleniumbase 会往 stdout 打印大量日志。协议流一旦被污染，Go 侧的逐行 JSON
@@ -21,6 +35,23 @@ import threading
 from typing import Any
 
 PROTOCOL_VERSION = 1
+
+
+def _encoding_of(stream: Any) -> str:
+    return getattr(stream, "encoding", None) or "-"
+
+
+# 进程启动时标准流的**原始**编码，必须在下面 reconfigure 之前取。
+#
+# 它只回答一个问题：「这台机器上 Python 认为 stdin/stdout 是什么编码」。
+# 中文 Windows 上是 cp936，路径经它一次就成乱码。出问题时这行信息必须已经在
+# 日志里，而不是等事后去猜 —— 这正是「路径乱码」类问题唯一需要的线索。
+_RAW_ENCODINGS = {
+    "stdin": _encoding_of(sys.stdin),
+    "stdout": _encoding_of(sys.stdout),
+    "stderr": _encoding_of(sys.stderr),
+    "filesystem": sys.getfilesystemencoding(),
+}
 
 # 保存真正的 stdout 作为协议通道，随后把所有常规输出改道到 stderr。
 # stderr 理论上可能为 None（pythonw 等无控制台场景），此时保持原样不动，
@@ -119,6 +150,43 @@ def emit_object(payload: dict[str, Any]) -> None:
     _write_line(_dump(payload))
 
 
+def raw_encodings() -> dict[str, str]:
+    """返回进程启动时标准流的原始编码（协议动手之前的值）。
+
+    日志与 doctor 都会带上它。「路径在传给刮削器时被按本机 locale 解码成了乱码」
+    这类问题，答案就藏在这一行里的 `stdin=cp936`。
+    """
+    return dict(_RAW_ENCODINGS)
+
+
+def read_stdin_utf8() -> str:
+    """把 stdin 整体读成文本，**固定按 UTF-8 解码**。
+
+    为什么不能用 `sys.stdin.read()`：那会用 locale 编码（中文 Windows = cp936）
+    去解码 Go 写来的 UTF-8 字节，`D:\\迅雷下载\\JULIA` 于是变成
+    `D:\\杩呴浄涓嬭浇\\JULIA`。危险的地方在于它不是「读不出来」，而是**读出一个
+    合法但错误的字符串** —— `mkdir(parents=True)` 会把这棵乱码目录树真的建出来，
+    图片写进去，而边车 JSON 里记的是正确路径。最终症状是永久性「缺图」，磁盘上
+    却多出一棵谁也看不懂的目录树。
+
+    Go 侧确实注入了 `PYTHONIOENCODING` / `PYTHONUTF8`，但进程级环境变量的
+    有效性依赖启动环境，不能作为协议正确性的前提。编码由协议自己钉死 ——
+    与 stdout 走二进制 buffer 是同一条纪律。
+
+    读到非 UTF-8 字节时抛 `UnicodeDecodeError`，由调用方报成明确的使用错误：
+    宁可拒绝运行，也不要拿一个乱码路径去写盘。
+    """
+    if sys.stdin is None:
+        # pythonw 这类无控制台场景 stdin 会是 None。没有 job 就是没有 job，
+        # 上层会按「0 条」正常收尾，不必为此报错。
+        return ""
+    buffer = getattr(sys.stdin, "buffer", None)
+    if buffer is None:
+        # 没有底层 buffer（测试替换成 StringIO 等）：只能按文本读。
+        return sys.stdin.read()
+    return buffer.read().decode("utf-8")
+
+
 def _write(event_type: str, payload: dict[str, Any]) -> None:
     if event_type not in _EVENT_TYPES:
         raise ProtocolError(f"未知事件类型: {event_type}")
@@ -149,7 +217,10 @@ def item_failed(fanha: str, reason: str, detail: str = "", job: str = "") -> Non
     """单条失败。reason 必须是 REASONS 中的值。"""
     if reason not in REASONS:
         raise ProtocolError(f"未知 reason: {reason}")
-    _write("item_failed", {"fanha": fanha, **_ref(job), "reason": reason, "detail": detail})
+    _write(
+        "item_failed",
+        {"fanha": fanha, **_ref(job), "reason": reason, "detail": detail},
+    )
 
 
 def done(summary: dict[str, int]) -> None:

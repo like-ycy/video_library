@@ -595,6 +595,12 @@ scraper.exe version
 `out` 目录由 Go 计算、Python 按需创建（`layout.prepare()`），Python 只负责往里写文件，
 因此 Python 完全不需要知道库的目录布局。
 
+`out` 的形状是 `<演员目录>/meta/<文件名主干>`，其中**演员目录必须已存在**（待刮削
+的视频就放在里面）。Python 在下载前会校验这一点（`cli._check_out_dir`）：不存在说明
+这个路径不是按库布局算出来的（最常见的原因是被按本机 locale 解码成了乱码），此时
+直接判该条 `internal_error` 失败 —— `mkdir(parents=True)` 对乱码路径是会成功的，
+放过去就会建出一棵谁也看不懂的目录树，把图片全写进那里。
+
 `job` 是 Go 给出的不透明标识，Python 必须在每条事件里原样回显（见 §6.4）。
 为什么不直接用番号：同一番号可能对应多个文件（`IPZZ-001.mp4` 与 `IPZZ-001-c.mp4`
 经 `NormalizeFanha` 归一后同号），而图片是按文件名主干分目录的。早先按番号把事件绑回
@@ -679,6 +685,24 @@ Go                                     Python
 
 > 这三个变量是**必须**的。缺 `PYTHONUNBUFFERED` 时表现为「进程在跑但 UI 无进度」，
 > 极难排查；缺 `PYTHONIOENCODING` 时表现为中文乱码或 `UnicodeEncodeError`。
+>
+> **但它们不足以保护协议。** 这三个都是**进程级**设置，有效性依赖启动环境
+> （继承来的同名变量、用户手工跑 exe、别的启动器都会影响）。而 stdin 一旦落到
+> locale 上，中文 Windows 的 GBK 会把 Go 写来的 UTF-8 路径
+> `D:\迅雷下载\JULIA` 解成 `D:\杩呴浄涓嬭浇\JULIA` —— 这是**合法但错误**的字符串，
+> `mkdir(parents=True)` 会把它真的建出来，图片写进去，而边车 JSON 里记的是正确
+> 路径，最终表现为永久性「缺图」，磁盘上却多出一棵看不懂的目录树。
+
+因此编码由协议自己钉死，与 §5.2 的 stdout 纪律同源：
+
+| 方向 | 做法 |
+|---|---|
+| 写出 | 协议 JSON 经 `encode("utf-8")` 后直接写二进制 buffer；日志走 stderr，单独 `reconfigure` 成 UTF-8 |
+| 读入 | `protocol.read_stdin_utf8()` 读底层 buffer 并按 UTF-8 解码，非 UTF-8 直接报错退出（`EXIT_USAGE`） |
+
+`scrape` 启动时会打印一行「进程原始编码：stdin=… stdout=… stderr=… 文件系统=…」
+（`protocol.raw_encodings()`，取的是 reconfigure **之前**的值），用于确认实际生效
+的编码 —— 排查这类问题时，这一行就是全部答案。
 
 ### 6.4 NDJSON 事件协议
 

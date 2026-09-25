@@ -16,6 +16,7 @@ stdout 只承载 JSON（事件流或一次性查询结果），stderr 承载全�
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import logging
 import platform
@@ -87,7 +88,13 @@ def cmd_scrape(args: argparse.Namespace) -> int:
         return EXIT_USAGE
 
     try:
-        targets = _read_targets(sys.stdin)
+        # stdin 固定按 UTF-8 解码，不让 locale 参与 —— 见 protocol.read_stdin_utf8。
+        targets = _read_targets(io.StringIO(protocol.read_stdin_utf8()))
+    except UnicodeDecodeError as exc:
+        # 明确报出来。这类错误如果放过去，下面会拿着乱码路径去 mkdir，
+        # 从而建出一棵谁也看不懂的目录树，而日志里没有任何线索。
+        log.error("stdin 不是合法 UTF-8，无法解析 job：%s", exc)
+        return EXIT_USAGE
     except ValueError as exc:
         log.error("%s", exc)
         return EXIT_USAGE
@@ -109,6 +116,7 @@ def cmd_scrape(args: argparse.Namespace) -> int:
     log.info(
         "开始刮削 %d 条，站点=%s，并发=%d", len(targets), site.name, args.concurrency
     )
+    _log_encodings()
 
     with httpx.Client(follow_redirects=True, timeout=args.timeout) as client:
         downloader = ImageDownloader(client, retries=args.retries)
@@ -169,6 +177,24 @@ def _tag(target: Target) -> str:
     而这两路恰好就是最需要区分的时候。
     """
     return f"[{target.fanha}] {target.job}" if target.job else f"[{target.fanha}]"
+
+
+def _log_encodings() -> None:
+    """把标准流的**原始**编码打一行日志。
+
+    属于「平时看着多余、出问题时唯一有用」的那类信息：中文 Windows 的 locale
+    是 GBK，只要链路上有一步没把编码钉死，路径就会变成「杩呴浄涓嬭浇」这种乱码。
+    带上这一行，排查时不必再去猜是哪一段把编码搞丢了。
+    """
+    encodings = protocol.raw_encodings()
+    log.info(
+        "进程原始编码：stdin=%s stdout=%s stderr=%s 文件系统=%s"
+        "（协议固定按 UTF-8 处理）",
+        encodings["stdin"],
+        encodings["stdout"],
+        encodings["stderr"],
+        encodings["filesystem"],
+    )
 
 
 def _install_signal_handlers(cancel: threading.Event) -> None:
@@ -276,6 +302,30 @@ def _fetch_meta(target: Target, site: Site, cancel: threading.Event) -> VideoMet
     return meta
 
 
+def _check_out_dir(target: Target) -> None:
+    """确认 job.out 的形状对得上，挡住「路径被解码坏了」这类事故。
+
+    Go 传进来的 out 是 `<演员目录>/meta/<文件名主干>`，而演员目录里就放着待刮削
+    的视频，**必然已经存在**。它不存在只有两种可能：Go 算错了，或者这个路径在
+    传进来的路上被按本机 locale 解码成了乱码。
+
+    必须在这里拦下，因为 `mkdir(parents=True)` 对乱码路径是会**成功**的：
+    它会新建一整棵 `杩呴浄涓嬭浇/33333/JULIA/meta/...` 目录树，图片全写进去，
+    而边车 JSON 里记的仍是正确路径。结果是磁盘上多出一棵看不懂的目录树，
+    用户那边只剩一个查不出原因的「缺图」。
+    """
+    actress_dir = target.out.parent.parent
+    if actress_dir.is_dir():
+        return
+    raise _FetchError(
+        "internal_error",
+        f"输出目录的上级目录不存在：{actress_dir} —— job={target.job or target.fanha}，"
+        f"out={target.out}。这个路径不是按视频库布局算出来的，"
+        f"常见原因是路径在传入时被按本机 locale 解码成了乱码"
+        f"（见启动日志的「进程原始编码」）",
+    )
+
+
 def _download_images(
     target: Target,
     meta: VideoMeta,
@@ -283,6 +333,7 @@ def _download_images(
     cancel: threading.Event,
 ) -> None:
     tag = _tag(target)
+    _check_out_dir(target)
     layout.prepare(target.out)
     log.info("%s 输出目录就绪：%s", tag, target.out)
 
@@ -411,6 +462,7 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
             health.driver.ready,
             health.driver.source,
         )
+        _log_encodings()
         return EXIT_OK
 
     log.error(

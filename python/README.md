@@ -20,11 +20,36 @@ uv run scraper doctor
 uv run scraper version
 
 # 刮削：job 列表从 stdin 读，一行一个 JSON 对象
+#
+# out 的形状是 <演员目录>/meta/<文件名主干>，**演员目录必须已存在**
+# （里面就放着待刮削的视频）。它不存在说明这个路径不是按库布局算出来的，
+# 刮削器会直接判该条失败，而不是凭空 mkdir 出一棵目录树。
+mkdir -p '/tmp/lib/演员A'
 printf '%s\n' \
-  '{"fanha":"ipzz-001","out":"/tmp/lib/演员A/meta/ipzz-001"}' \
-  '{"fanha":"ipzz-002","out":"/tmp/lib/演员A/meta/ipzz-002"}' \
+  '{"fanha":"ipzz-001","out":"/tmp/lib/演员A/meta/ipzz-001","job":"演员A/ipzz-001"}' \
+  '{"fanha":"ipzz-002","out":"/tmp/lib/演员A/meta/ipzz-002","job":"演员A/ipzz-002"}' \
   | uv run scraper scrape --site javlibrary --concurrency 2
 ```
+
+`job` 是 Go 侧给出的不透明标识，刮削器只负责在每条事件里原样回显（可选；
+手工调用时可以不传，事件会按番号回传）。
+
+## stdin / stdout 的编码是钉死的
+
+协议是 NDJSON，即 **UTF-8 字节**，进程 locale 不参与决定它怎么编解码：
+
+- **stdin**：`protocol.read_stdin_utf8()` 直接读底层 buffer 并按 UTF-8 解码，
+  读到非 UTF-8 字节就报错退出。
+- **stdout**：协议 JSON 直接写二进制 buffer。
+
+这条纪律不是洁癖。中文 Windows 的 locale 是 GBK，Go 写来的 UTF-8 路径
+`D:\迅雷下载\JULIA` 会被 GBK 解成 `D:\杩呴浄涓嬭浇\JULIA` —— 一个**合法但错误**
+的字符串。`mkdir(parents=True)` 会高高兴兴把这棵乱码目录树建出来，图片全写进去，
+而边车 JSON 里记的是正确路径，用户那边只剩一个查不出原因的「缺图」。
+
+`PYTHONIOENCODING` / `PYTHONUTF8` 是**进程级**设置，有效性依赖启动环境，
+不能作为协议正确性的前提；`scrape` 启动时会打印一行
+「进程原始编码：stdin=… 文件系统=…」，用于确认实际生效的编码。
 
 ## 退出码
 

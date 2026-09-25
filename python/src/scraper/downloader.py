@@ -50,7 +50,9 @@ class ImageDownloader:
 
         if not _is_absolute_http_url(url):
             # 重试对这个错误没有意义，直接判失败并说清原因。
-            log.error("图片地址不是绝对 URL，站点解析可能漏了 urljoin：%r → %s", url, dest)
+            log.error(
+                "图片地址不是绝对 URL，站点解析可能漏了 urljoin：%r → %s", url, dest
+            )
             return False
 
         last_error = ""
@@ -95,9 +97,10 @@ class ImageDownloader:
             # 写完立刻核对：同步盘、杀软、异常文件系统都可能让写入"成功"而文件
             # 不在（或大小不符）。不核对就会把一个幽灵路径报给 Go 写进边车 JSON，
             # 之后全系统都按它找图 —— 症状是永久性的「缺图」，且没有任何线索。
+            expected = len(resp.content)
             actual = dest.stat().st_size if dest.exists() else 0
-            if actual != len(resp.content):
-                last_error = f"落盘校验不符（期望 {len(resp.content)} 字节，实际 {actual}）"
+            if actual != expected:
+                last_error = f"落盘校验不符（期望 {expected} 字节，实际 {actual}）"
                 log.error("写入后校验失败 %s：%s", dest, last_error)
                 continue
 
