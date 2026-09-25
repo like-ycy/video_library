@@ -78,7 +78,8 @@ func openWithSystemDefault(videoPath string) error {
 		// 否则含空格的路径会被当成标题，视频根本不会打开。
 		cmd = exec.Command("cmd", "/c", "start", "", videoPath)
 		// cmd 是控制台程序，不隐藏必闪窗口；start 起的目标本身不受影响。
-		// 只对这里调 Hide：上面的播放器是 GUI 程序，SW_HIDE 会让它隐藏启动。	case "darwin":
+		// 只对这里调 Hide：上面的播放器是 GUI 程序，SW_HIDE 会让它隐藏启动。
+	case "darwin":
 		cmd = exec.Command("open", videoPath)
 	default:
 		cmd = exec.Command("xdg-open", videoPath)

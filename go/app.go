@@ -66,6 +66,10 @@ type App struct {
 	prober *probe.Prober
 	runner *scraper.Runner
 
+	// stream 是本地视频流服务。Windows 上不能让大视频走 Wails AssetServer：
+	// WebView2 响应体整包进内存，一点播放就可能把进程打崩。
+	stream *media.StreamServer
+
 	scrapeMu     sync.Mutex
 	scrapeCancel context.CancelFunc
 	scraping     bool
@@ -110,6 +114,16 @@ func NewApp() (*App, error) {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.rebuildRunner()
+
+	stream, err := media.StartStreamServer(a.ResolveLibraryRoot)
+	if err != nil {
+		// 起不来就退回 Wails /media/ 路径：封面能看，只是大视频仍有崩溃风险。
+		log.Printf("警告：本地视频流服务启动失败，内嵌播放可能不稳定：%v", err)
+		return
+	}
+	a.mu.Lock()
+	a.stream = stream
+	a.mu.Unlock()
 }
 
 func (a *App) shutdown(context.Context) {
@@ -122,6 +136,10 @@ func (a *App) shutdown(context.Context) {
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.stream != nil {
+		_ = a.stream.Close()
+		a.stream = nil
+	}
 	for id, store := range a.stores {
 		_ = store.Close()
 		delete(a.stores, id)
@@ -343,9 +361,20 @@ func (a *App) decorate(libraryID string, row index.Row) videoDTO {
 		dto.ShotURLs = append(dto.ShotURLs, media.ArtURL(libraryID, path.Join(row.Actress, shot)))
 	}
 	if row.VideoRel != "" {
-		dto.VideoURL = media.VideoURL(libraryID, row.VideoRel)
+		dto.VideoURL = a.videoURL(libraryID, row.VideoRel)
 	}
 	return dto
+}
+
+// videoURL 优先走本地流媒体服务；服务未就绪时退回 Wails 的 /media/ 路径。
+func (a *App) videoURL(libraryID, rel string) string {
+	a.mu.Lock()
+	stream := a.stream
+	a.mu.Unlock()
+	if stream != nil {
+		return stream.VideoURL(libraryID, rel)
+	}
+	return media.VideoURL(libraryID, rel)
 }
 
 func (a *App) store(libraryID string) (*index.Store, error) {
