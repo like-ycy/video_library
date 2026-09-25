@@ -61,6 +61,10 @@ export interface Candidate {
   fileSize: number;
   scraped: boolean;
   missingArt: boolean;
+  /** 该条目的图片目录。缺图时用来告诉用户程序实际在找哪个路径。 */
+  artDir: string;
+  /** 边车里记了、但磁盘上没有的图片（相对演员目录）。 */
+  missingFiles: string[] | null;
 }
 export interface Issue {
   kind: string;

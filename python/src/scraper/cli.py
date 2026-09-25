@@ -150,9 +150,25 @@ def _read_targets(stream: TextIO) -> list[Target]:
         if not fanha or not out:
             raise ValueError(f"stdin 第 {lineno} 行缺少必填字段 fanha / out")
         targets.append(
-            Target(fanha=fanha, out=Path(out), force=bool(obj.get("force", False)))
+            Target(
+                fanha=fanha,
+                out=Path(out),
+                force=bool(obj.get("force", False)),
+                # 可选：老版本 Go 不传它，此时事件按番号回传，行为与以前一致。
+                job=str(obj.get("job", "")).strip(),
+            )
         )
     return targets
+
+
+def _tag(target: Target) -> str:
+    """日志前缀。
+
+    带上 job 标识而不是只有番号：同一番号的两个文件（`X.mp4` / `X-c.mp4`）会被
+    并发刮削，两路日志交织在一起，只看番号根本分不清哪行属于哪个文件 ——
+    而这两路恰好就是最需要区分的时候。
+    """
+    return f"[{target.fanha}] {target.job}" if target.job else f"[{target.fanha}]"
 
 
 def _install_signal_handlers(cancel: threading.Event) -> None:
@@ -183,14 +199,18 @@ def _scrape_one(
     if cancel.is_set():
         return _Outcome("skipped", target.fanha)
 
+    # 每个 job 的第一行日志就是它的输出目录（绝对路径）。Windows 上出问题时，
+    # 要回答的第一个问题永远是「它到底往哪写」—— 以前这份日志里根本没有答案。
+    log.info("%s 开始刮削，输出目录：%s", _tag(target), target.out)
+
     try:
         meta = _fetch_meta(target, site, cancel)
         _download_images(target, meta, downloader, cancel)
     except _CanceledError:
         return _Outcome("skipped", target.fanha)
     except _FetchError as exc:
-        log.error("[%s] %s：%s", target.fanha, exc.reason, exc.detail)
-        protocol.item_failed(target.fanha, exc.reason, exc.detail)
+        log.error("%s %s：%s", _tag(target), exc.reason, exc.detail)
+        protocol.item_failed(target.fanha, exc.reason, exc.detail, job=target.job)
         return _Outcome("failed", target.fanha)
 
     return _Outcome("ok", target.fanha)
@@ -206,7 +226,7 @@ def _fetch_meta(target: Target, site: Site, cancel: threading.Event) -> VideoMet
     （打印后直接 return）。因此 session 内只捕获、不外抛；所有失败在退出
     with 之后再 raise，否则会静默落到 detail_html 未赋值的路径。
     """
-    protocol.progress(target.fanha, "search", _PCT_SEARCH)
+    protocol.progress(target.fanha, "search", _PCT_SEARCH, job=target.job)
     search_url = site.search_url(target.fanha)
 
     detail_html: str | None = None
@@ -226,7 +246,7 @@ def _fetch_meta(target: Target, site: Site, cancel: threading.Event) -> VideoMet
                 # 搜索页没有详情链接，即站点无此记录 —— 重试也不会变好。
                 raise _FetchError("not_found", f"站点未收录：{target.fanha}")
 
-            protocol.progress(target.fanha, "detail", _PCT_DETAIL)
+            protocol.progress(target.fanha, "detail", _PCT_DETAIL, job=target.job)
             detail_html = fetch_html(sb, detail_url)
             if not detail_html:
                 raise _FetchError("timeout", f"详情页加载失败：{detail_url}")
@@ -244,6 +264,15 @@ def _fetch_meta(target: Target, site: Site, cancel: threading.Event) -> VideoMet
         raise _FetchError(
             "parse_failed", "详情页解析不到标题或封面，站点结构可能已变化"
         )
+    # 把解析结果原样打进日志。图片地址是否是绝对 URL 决定了后面能不能下载成功，
+    # 而它只在解析这一步产生 —— 出问题时不必再回去猜站点给了什么。
+    log.info(
+        "%s 解析完成：标题=%s，封面=%s，截图=%d 张",
+        _tag(target),
+        meta.title,
+        meta.cover_url,
+        len(meta.shot_urls),
+    )
     return meta
 
 
@@ -253,16 +282,17 @@ def _download_images(
     downloader: ImageDownloader,
     cancel: threading.Event,
 ) -> None:
+    tag = _tag(target)
     layout.prepare(target.out)
+    log.info("%s 输出目录就绪：%s", tag, target.out)
 
-    protocol.progress(target.fanha, "download_cover", _PCT_COVER)
+    protocol.progress(target.fanha, "download_cover", _PCT_COVER, job=target.job)
     if not downloader.download(
         meta.cover_url, layout.cover_path(target.out), overwrite=target.force
     ):
         raise _FetchError("download_failed", f"封面下载失败：{meta.cover_url}")
 
     total = len(meta.shot_urls)
-    shot_files: list[str] = []
     for index, url in enumerate(meta.shot_urls, 1):
         if cancel.is_set():
             raise _CanceledError
@@ -270,24 +300,87 @@ def _download_images(
             target.fanha,
             "download_shots",
             _PCT_SHOTS_FROM + (_PCT_SHOTS_TO - _PCT_SHOTS_FROM) * index / total,
+            job=target.job,
         )
-        if downloader.download(
+        downloader.download(
             url, layout.shot_path(target.out, index), overwrite=target.force
-        ):
-            shot_files.append(layout.shot_name(index))
+        )
 
-    # 部分截图下载失败不算整条失败：元数据与封面已经拿到，仍然有价值。
-    # 数量上的差异通过 total_shots 与 shot_files 长度的对比暴露给 UI。
-    if not shot_files and total:
-        log.warning("[%s] %d 张截图全部下载失败", target.fanha, total)
+    # 报给 Go 的必须是**磁盘实况**，不是「下载函数说成功」的清单。两者在同步盘、
+    # 杀软、目录被并发清理时会分叉，而边车 JSON 一旦写下这些文件名，全系统就按
+    # 它们找图 —— 写进去一个不存在的路径会变成永久性的「缺图」，且无处可查。
+    cover_file = _verify_cover(target)
+    shot_files = _verify_shots(target, total)
+
+    # 封面没落盘就不算成功：cover 是全系统找图的唯一依据。宁可让这条报失败、
+    # 用户重试一次，也不要留下一条查不出原因的坏记录。
+    if not cover_file:
+        raise _FetchError(
+            "download_failed",
+            f"封面写入后不在磁盘上：{layout.cover_path(target.out)}",
+        )
+
+    # 部分截图缺失不算整条失败：元数据与封面已经拿到，仍然有价值。数量上的差异
+    # 通过 total_shots 与 shot_files 长度的对比暴露给 UI。
+    log.info(
+        "%s 落盘完成：封面=%s，截图=%d/%d 张，目录=%s",
+        tag,
+        cover_file,
+        len(shot_files),
+        total,
+        target.out,
+    )
 
     result = ScrapeResult(
         meta=meta,
-        cover_file=layout.COVER_NAME,
+        cover_file=cover_file,
         shot_files=shot_files,
         total_shots=total,
     )
-    protocol.item_done(target.fanha, result.to_payload())
+    protocol.item_done(target.fanha, result.to_payload(), job=target.job)
+
+
+def _verify_cover(target: Target) -> str:
+    """确认封面真的在磁盘上，返回相对文件名；不在则返回空串。
+
+    `download()` 内部已经校验过一次，这里再查一遍是因为它同时覆盖「跳过已存在
+    文件」那条路径 —— 那条路径只看文件在不在，不保证 Go 拿到路径之后文件还活着
+    （同步盘、杀软隔离、用户手删）。
+    """
+    path = layout.cover_path(target.out)
+    if path.is_file() and path.stat().st_size > 0:
+        return layout.COVER_NAME
+    log.error("%s 封面未落盘：%s", _tag(target), path)
+    return ""
+
+
+def _verify_shots(target: Target, total: int) -> list[str]:
+    """返回磁盘上确实存在的截图文件名，并把缺失的逐个列进日志。
+
+    按 `total` 遍历而不是按「哪些下载返回了 True」：跳过已存在文件、重试后成功、
+    写入被清掉，这三种情况只有问磁盘才能得到一致答案。
+
+    「存在」的判定与 Go 侧 `artExists` 一致地要求非空：两个地方对同一件事给出
+    不同答案时，会出现「日志说截图齐全、界面说缺图」这种自相矛盾的状态。
+    """
+    kept: list[str] = []
+    missing: list[str] = []
+    for index in range(1, total + 1):
+        name = layout.shot_name(index)
+        path = target.out / name
+        if path.is_file() and path.stat().st_size > 0:
+            kept.append(name)
+        else:
+            missing.append(name)
+    if missing:
+        log.error(
+            "%s 以下截图不在磁盘上（%d/%d 张），不会写进边车：%s",
+            _tag(target),
+            len(missing),
+            total,
+            ", ".join(missing),
+        )
+    return kept
 
 
 # ── doctor / version ──────────────────────────────────────────────────────
@@ -415,6 +508,11 @@ def _configure_logging(level: str) -> None:
         stream=sys.stderr,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    # httpx 会把每个请求打一行 INFO，而日志面板是要人盯着看的：它和 downloader
+    # 自己那行「已写入 X（N 字节）← URL」说的是同一件事，却少了落盘结果。
+    # 压到 WARNING，只留真正需要人介入的输出（连接失败、超时等）。
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def main(argv: list[str] | None = None) -> int:

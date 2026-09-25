@@ -4,9 +4,24 @@ import { call } from "../api";
 import { useFeedback } from "../feedback";
 import { useTasks } from "../tasks";
 import { formatSize } from "../format.js";
-import type { Health, ScanResult } from "../types";
+import type { Candidate, Health, ScanResult } from "../types";
 import { EmptyState, PageHeader, StatusBadge } from "../components/shell";
 import { TaskProgress } from "./TaskMonitorView";
+/**
+ * 缺图时给出悬停提示：程序到底在找哪个目录、缺哪几个文件。
+ *
+ * 「缺图」两个字本身说明不了任何事 —— 路径拼错、图片被删、这一次刮削没成功，
+ * 在界面上长得一模一样。把后端算好的期望路径摊开，用户才能自己动手核对。
+ */
+function artHint(c: Candidate): string | undefined {
+  if (!c.scraped || !c.missingArt) return undefined;
+  const files = c.missingFiles ?? [];
+  const tail = `图片目录：${c.artDir}`;
+  if (files.length) {
+    return `缺少 ${files.length} 个文件：\n${files.join("\n")}\n${tail}`;
+  }
+  return `边车记录里没有任何图片路径\n${tail}`;
+}
 export function ScrapeView({
   libraryId,
   navigate,
@@ -237,10 +252,12 @@ export function ScrapeView({
                       <td>{c.videoFile}</td>
                       <td>{formatSize(c.fileSize)}</td>
                       <td>
-                        <StatusBadge
-                          scraped={c.scraped}
-                          missingArt={c.missingArt}
-                        />
+                        <span title={artHint(c)}>
+                          <StatusBadge
+                            scraped={c.scraped}
+                            missingArt={c.missingArt}
+                          />
+                        </span>
                       </td>
                     </tr>
                   ))}

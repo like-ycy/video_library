@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "xwang-ui";
 import { call } from "../api";
 import { useTasks } from "../tasks";
-import type { Issue } from "../types";
+import type { Candidate, Issue } from "../types";
 import { EmptyState, PageHeader, RefreshButton } from "../components/shell";
 const META: Record<string, [string, string]> = {
   unrecognized: ["番号无法识别", "按 字母串-数字 规范文件名，例如 IPX-001.mp4"],
@@ -15,6 +15,18 @@ const META: Record<string, [string, string]> = {
   unscraped: ["尚未刮削", "到扫描页开始刮削"],
   missing_art: ["图片缺失", "到扫描页勾选重新下载图片"],
 };
+/**
+ * 把「缺图」这句话补完整：缺哪几个文件、程序期望它们在哪个目录。
+ *
+ * 只写一句「封面或截图缺失」时，用户没法判断是路径不对、文件被人删了，还是
+ * 这一次刮削压根没成功 —— 而这三者的处理方式完全不同。后端已经把这两项算好
+ * 传过来了，没有理由再让用户去猜。
+ */
+function missingArtMessage(c: Candidate): string {
+  const files = c.missingFiles ?? [];
+  if (files.length) return `缺少 ${files.length} 个文件：${files.join("、")}`;
+  return `边车记录里没有任何图片路径，期望目录：${c.artDir}`;
+}
 export function IssuesView({
   libraryId,
   navigate,
@@ -43,7 +55,7 @@ export function IssuesView({
                 kind: c.scraped ? "missing_art" : "unscraped",
                 actress: c.actress,
                 subject: c.fanha,
-                message: c.scraped ? "封面或截图缺失" : "尚未刮削元数据",
+                message: c.scraped ? missingArtMessage(c) : "尚未刮削元数据",
               })),
           ]);
       })

@@ -34,15 +34,40 @@ const (
 // 所有事件类型共用一个结构体而不是各自一个类型：事件是流式到达的，先解析出
 // Type 再二次解码会让代码多一层且没有收益，字段少且互不冲突。
 type Event struct {
-	V       int       `json:"v"`
-	Type    string    `json:"type"`
-	Fanha   string    `json:"fanha"`
-	Stage   string    `json:"stage"`
-	Percent float64   `json:"percent"`
+	V     int    `json:"v"`
+	Type  string `json:"type"`
+	Fanha string `json:"fanha"`
+	Stage string `json:"stage"`
+	// Percent 是阶段内进度，0.0–1.0。
+	Percent float64 `json:"percent"`
+	// ID 是 job 标识的回显（协议字段名 job，见 Job.ID）。旧刮削器不带这个
+	// 字段，此时为空 —— 调用方必须退回按番号匹配，否则会一条都对不上。
+	ID      string    `json:"job"`
 	Data    *ItemData `json:"data"`
 	Reason  string    `json:"reason"`
 	Detail  string    `json:"detail"`
 	Summary *Summary  `json:"summary"`
+}
+
+// Item 标识「事件属于哪一条 job」。
+//
+// 为什么不直接用番号：同一番号可能对应多个文件（`X.mp4` 与 `X-c.mp4` 经
+// NormalizeFanha 归一后同号）。早先按番号把事件绑回候选，两个文件的事件会落到
+// 同一个候选上，于是边车 JSON 里记下的是**另一个文件**的输出目录 —— 症状是
+// 「刮削成功、日志也说下载了，但那个目录根本不存在」，扫描页于是永远显示缺图。
+//
+// ID 是 Go 生成、Python 原样回显的不透明标识；Fanha 只用于展示与旧组件回退。
+type Item struct {
+	ID    string
+	Fanha string
+}
+
+// String 返回日志用的标识：优先 job 标识，旧刮削器没有时退回番号。
+func (i Item) String() string {
+	if i.ID != "" {
+		return i.ID
+	}
+	return i.Fanha
 }
 
 // ItemData 是 item_done 的载荷。

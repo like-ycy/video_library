@@ -101,18 +101,23 @@ func runFakeScraper(mode string) {
 			emitLine(`{"v":1,"type":"done","summary":{"ok":0,"failed":0,"skipped":0}}`)
 			os.Exit(0)
 		}
+		// 与真实刮削器一致：把收到的 job 标识原样回显到每条事件里。
+		// 这是事件绑回文件的唯一依据，必须由假刮削器一起验证。
 		emitLine(fmt.Sprintf(
-			`{"v":1,"type":"progress","fanha":%q,"stage":"search","percent":0.5}`, jobs[0]))
+			`{"v":1,"type":"progress","fanha":%q,"job":%q,"stage":"search","percent":0.5}`,
+			jobs[0].Fanha, jobs[0].ID))
 		emitLine(fmt.Sprintf(
-			`{"v":1,"type":"item_done","fanha":%q,"data":{"title":"标题一",`+
-				`"cover_file":"cover.jpg","shot_files":["images/1.jpg"],"total_shots":2}}`, jobs[0]))
+			`{"v":1,"type":"item_done","fanha":%q,"job":%q,"data":{"title":"标题一",`+
+				`"cover_file":"cover.jpg","shot_files":["images/1.jpg"],"total_shots":2}}`,
+			jobs[0].Fanha, jobs[0].ID))
 
 		failed := 0
 		if len(jobs) > 1 {
 			failed = 1
 			emitLine(fmt.Sprintf(
-				`{"v":1,"type":"item_failed","fanha":%q,"reason":"not_found","detail":"站点未收录"}`,
-				jobs[1]))
+				`{"v":1,"type":"item_failed","fanha":%q,"job":%q,`+
+					`"reason":"not_found","detail":"站点未收录"}`,
+				jobs[1].Fanha, jobs[1].ID))
 		}
 		emitLine(fmt.Sprintf(
 			`{"v":1,"type":"done","summary":{"ok":1,"failed":%d,"skipped":0}}`, failed))
@@ -127,8 +132,8 @@ func emitLine(line string) {
 }
 
 // readStdinJobs 读走 stdin 上的 NDJSON job，顺带验证 Go 侧确实投喂了内容。
-func readStdinJobs() []string {
-	var fanhas []string
+func readStdinJobs() []Job {
+	var jobs []Job
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -137,10 +142,10 @@ func readStdinJobs() []string {
 		}
 		var job Job
 		if err := json.Unmarshal([]byte(line), &job); err == nil && job.Fanha != "" {
-			fanhas = append(fanhas, job.Fanha)
+			jobs = append(jobs, job)
 		}
 	}
-	return fanhas
+	return jobs
 }
 
 // startStubbornChild 起一个孙进程并让它一直活着。
@@ -159,7 +164,7 @@ func startStubbornChild() {
 // ── 测试侧 ────────────────────────────────────────────────────────────────
 
 type failedItem struct {
-	fanha  string
+	item   Item
 	reason string
 	detail string
 }
@@ -168,26 +173,34 @@ type recorder struct {
 	mu       sync.Mutex
 	progress []string
 	done     []ItemData
-	failed   []failedItem
-	logs     []string
+	// doneFor / failedFor 记录事件被归属到哪条 job。
+	//
+	// 光看载荷分不出「事件绑对了文件」还是「绑到了同番号的另一个文件」——
+	// 那正是本次要钉住的那个 bug，所以必须连归属一起记下来。
+	doneFor   []Item
+	failedFor []Item
+	failed    []failedItem
+	logs      []string
 }
 
 func (r *recorder) callbacks() Callbacks {
 	return Callbacks{
-		Progress: func(fanha, stage string, _ float64) {
+		Progress: func(item Item, stage string, _ float64) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
-			r.progress = append(r.progress, fanha+"/"+stage)
+			r.progress = append(r.progress, item.String()+"/"+stage)
 		},
-		ItemDone: func(_ string, data ItemData) {
+		ItemDone: func(item Item, data ItemData) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
 			r.done = append(r.done, data)
+			r.doneFor = append(r.doneFor, item)
 		},
-		ItemFailed: func(fanha, reason, detail string) {
+		ItemFailed: func(item Item, reason, detail string) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
-			r.failed = append(r.failed, failedItem{fanha, reason, detail})
+			r.failed = append(r.failed, failedItem{item, reason, detail})
+			r.failedFor = append(r.failedFor, item)
 		},
 		Log: func(line string) {
 			r.mu.Lock()
@@ -271,7 +284,10 @@ func TestInspectParsesDoctorPayload(t *testing.T) {
 func TestRunFeedsJobsAndParsesEvents(t *testing.T) {
 	rec := &recorder{}
 	result, err := fakeRunner(modeOK).Run(context.Background(),
-		[]Job{{Fanha: "ipzz-001"}, {Fanha: "ipzz-002"}}, rec.callbacks())
+		[]Job{
+			{ID: "演员A/IPZZ-001", Fanha: "ipzz-001"},
+			{ID: "演员A/IPZZ-002", Fanha: "ipzz-002"},
+		}, rec.callbacks())
 	if err != nil {
 		t.Fatalf("Run 失败: %v", err)
 	}
@@ -287,7 +303,7 @@ func TestRunFeedsJobsAndParsesEvents(t *testing.T) {
 	}
 
 	// 假刮削器是按收到的 job 数决定输出的，所以这两条同时证明 stdin 投喂成功。
-	if len(rec.progress) != 1 || rec.progress[0] != "ipzz-001/search" {
+	if len(rec.progress) != 1 || rec.progress[0] != "演员A/IPZZ-001/search" {
 		t.Errorf("progress 回调 = %v", rec.progress)
 	}
 	if len(rec.done) != 1 {
@@ -296,8 +312,28 @@ func TestRunFeedsJobsAndParsesEvents(t *testing.T) {
 	if rec.done[0].Title != "标题一" || rec.done[0].TotalShots != 2 {
 		t.Errorf("item_done 载荷有误：%+v", rec.done[0])
 	}
+	// 事件必须绑回「它自己那条 job」，而不是随便挑一条同番号的。
+	if rec.doneFor[0].ID != "演员A/IPZZ-001" || rec.doneFor[0].Fanha != "ipzz-001" {
+		t.Errorf("item_done 归属有误：%+v", rec.doneFor[0])
+	}
 	if len(rec.failed) != 1 || rec.failed[0].reason != ReasonNotFound {
 		t.Fatalf("item_failed 回调 = %+v", rec.failed)
+	}
+	if rec.failedFor[0].ID != "演员A/IPZZ-002" {
+		t.Errorf("item_failed 归属有误：%+v", rec.failedFor[0])
+	}
+}
+
+// TestItemStringFallsBackToFanha 钉住旧刮削器的回退显示。
+//
+// 旧组件不回显 job 标识，此时日志与归属展示只能退回番号 —— 若直接显示空串，
+// 日志里就会出现「完成 ：封面=...」这种没法看也没法查的行。
+func TestItemStringFallsBackToFanha(t *testing.T) {
+	if got := (Item{Fanha: "ipzz-001"}).String(); got != "ipzz-001" {
+		t.Errorf("无 ID 时应退回番号，实际 %q", got)
+	}
+	if got := (Item{ID: "演员A/IPZZ-001", Fanha: "ipzz-001"}).String(); got != "演员A/IPZZ-001" {
+		t.Errorf("有 ID 时应优先用 ID，实际 %q", got)
 	}
 }
 

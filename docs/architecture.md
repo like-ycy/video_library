@@ -589,10 +589,18 @@ scraper.exe version
 `stdin` 每行一个 job：
 
 ```json
-{"fanha":"ipzz-001","out":"D:/videos/演员A/meta/ipzz-001","force":false}
+{"fanha":"ipzz-001","out":"D:/videos/演员A/meta/IPZZ-001","force":false,"job":"演员A/IPZZ-001"}
 ```
 
-`out` 目录由 Go 计算并创建，Python 只负责往里写文件，因此 Python 完全不需要知道库的目录布局。
+`out` 目录由 Go 计算、Python 按需创建（`layout.prepare()`），Python 只负责往里写文件，
+因此 Python 完全不需要知道库的目录布局。
+
+`job` 是 Go 给出的不透明标识，Python 必须在每条事件里原样回显（见 §6.4）。
+为什么不直接用番号：同一番号可能对应多个文件（`IPZZ-001.mp4` 与 `IPZZ-001-c.mp4`
+经 `NormalizeFanha` 归一后同号），而图片是按文件名主干分目录的。早先按番号把事件绑回
+job，两个文件的事件会互相覆盖，于是边车 JSON 里记下的是**另一个文件**的输出目录 ——
+刮削看着成功、那个目录却从没被写过，表现为永久性「缺图」。该字段可选：不带时按番号
+回退（兼容旧版本 Go）。
 
 ### 5.4 各模块职责
 
@@ -601,9 +609,9 @@ scraper.exe version
 | `protocol.py` | NDJSON 事件构造与写出；**stdout/stderr 隔离**（见 §6.6） |
 | `cli.py` | 子命令解析、读 stdin job、调度并发、汇总统计、退出码 |
 | `browser.py` | 封装 `SB(uc=True, headless=True)`；页面加载 + 年龄确认 + `solve_captcha()`；上下文管理器保证异常时退出会话 |
-| `downloader.py` | 复用一条 `httpx.Client`；重试与超时；图片写盘 |
+| `downloader.py` | 复用一条 `httpx.Client`；重试与超时；图片写盘 + 写完立即复核（存在且大小相符） |
 | `sites/base.py` | `Site` 抽象：`search_url(fanha)` / `parse_detail(html) -> VideoMeta` |
-| `sites/javlibrary.py` | 现 `generate.py` 的 `search_detail_url` / `parse_detail` 逻辑迁入，含 `/cn/jav` 链接选择与 `previewthumbs` 解析 |
+| `sites/javlibrary.py` | 现 `generate.py` 的 `search_detail_url` / `parse_detail` 逻辑迁入，含 `/cn/jav` 链接选择、`previewthumbs` 解析、图片地址统一 `urljoin` 补全（绝对 / `//` / `/imgs` 三种形态都要认） |
 | `models.py` | `VideoMeta` dataclass，字段与 §7.2 的边车 JSON 一一对应（但不负责落盘） |
 | `layout.py` | 依据 `job.out` 建目录、定文件名（`cover.jpg` / `images/N.jpg`） |
 
@@ -678,10 +686,10 @@ Go                                     Python
 
 ```jsonc
 // 进度：stage ∈ {search, detail, download_cover, download_shots}
-{"v":1,"type":"progress","fanha":"ipzz-001","stage":"search","percent":0.25}
+{"v":1,"type":"progress","fanha":"ipzz-001","job":"演员A/IPZZ-001","stage":"search","percent":0.25}
 
 // 单项成功：data 只带文件名，不带路径（见下方说明）
-{"v":1,"type":"item_done","fanha":"ipzz-001","data":{
+{"v":1,"type":"item_done","fanha":"ipzz-001","job":"演员A/IPZZ-001","data":{
   "title":"...","release_date":"2024-03-15","site_length_min":120,
   "genres":["..."],"cast":["..."],
   "cover_file":"cover.jpg",
@@ -690,7 +698,7 @@ Go                                     Python
 }}
 
 // 单项失败
-{"v":1,"type":"item_failed","fanha":"ipzz-001","reason":"not_found","detail":"搜索结果为空"}
+{"v":1,"type":"item_failed","fanha":"ipzz-001","job":"演员A/IPZZ-001","reason":"not_found","detail":"搜索结果为空"}
 
 // 全部结束
 {"v":1,"type":"done","summary":{"ok":8,"failed":2,"skipped":1}}
@@ -699,14 +707,27 @@ Go                                     Python
 {"v":1,"type":"fatal","reason":"chrome_missing","detail":"未找到 Chrome 浏览器"}
 ```
 
+**`job` 字段（可选）**：Python 把 job 载荷里的 `job` 原样回显到每条事件里，Go 靠它把
+事件绑回自己下发的那条 job、进而绑回具体文件与输出目录。不按番号绑的原因见 §5.3。
+它是**纯增量字段**，因此协议版本仍是 v1：
+
+- 旧 Go + 新 Python：多出的键被忽略，行为不变。
+- 新 Go + 旧 Python：`job` 为空，Go 退回按番号匹配（同番号多文件时可能绑错，
+  但不会崩）。
+
 **为什么 `item_done` 报告文件名而不是路径**
 
 Python 只报告它**实际写出了哪些文件**，目录由 Go 侧拼接。这样文件命名规则在
 整个系统里只有一处定义（`python/src/scraper/layout.py`），Go 不复制一份 ——
 否则改一边忘一边，症状是「刮削成功但封面永远是空白」，在界面上极难归因。
 
-`shot_files` 是下载成功的数量，`total_shots` 是站点给出的总数。两者不等表示
-部分截图失败：单条仍然算成功（元数据与封面已拿到），但 UI 应显示「8/9 张」。
+既然这个字段会被 Go 写进边车 JSON、成为全系统找图的唯一依据，Python 在发
+`item_done` 之前必须**回到磁盘复核**每个文件确实存在且非空，只把真实存在的报上来；
+封面没落盘则整条判 `download_failed`。否则一个幽灵路径会被永久固化：
+用户看到「缺图」，而日志里没有任何线索。
+
+`shot_files` 是**磁盘上确实存在**的截图数量，`total_shots` 是站点给出的总数。
+两者不等表示部分截图失败：单条仍然算成功（元数据与封面已拿到），但 UI 应显示「8/9 张」。
 
 **一次性查询命令**（`doctor` / `version`）输出的是**单行普通 JSON 对象**，
 不是事件流 —— 它们不产生 `v`/`type` 之外的事件。两者的共同约定是

@@ -120,9 +120,15 @@ func scanActress(root, actress string) ([]Candidate, []Issue) {
 			FileSize:   size,
 			FileMtime:  mtime,
 			Scraped:    scraped,
+			ArtDir:     ArtDir(actressDir, stem),
 		}
 		if scraped {
-			candidate.MissingArt = !artExists(actressDir, record.Cover)
+			candidate.MissingFiles = MissingArtFiles(actressDir, record)
+			// 记录里一个图片路径都没有，同样是「没有图」—— 只比较「记录里的
+			// 文件在不在」会把它算成齐全，那正是「有 json、没图片、界面却不说
+			// 缺图」的由来。
+			candidate.MissingArt = len(record.ArtFiles()) == 0 ||
+				len(candidate.MissingFiles) > 0
 		}
 		candidates = append(candidates, candidate)
 	}
@@ -144,15 +150,33 @@ func loadSummary(actressDir, actress string) (ActressSummary, *Issue) {
 	}
 }
 
-// artExists 检查封面文件是否真的在磁盘上且非空。
+// MissingArtFiles 返回边车里记录、但磁盘上不存在的图片（相对演员目录，正斜杠）。
+//
+// 记录里提到的每个文件都要查：cover 与 screenshots 都是 Go 写进 JSON 的，少了
+// 任何一个，UI 上都是「图不对」。早期实现只看封面 —— 截图整个目录丢失、封面还
+// 在时仍显示「已刮削」，而用户看到的是「有 json、没有 images」，却拿不到任何提示。
+//
+// 返回空切片有歧义（可能图齐全，也可能记录里压根没有图片字段），调用方用
+// Video.ArtFiles() 的长度区分这两者。
+func MissingArtFiles(actressDir string, record Video) []string {
+	var missing []string
+	for _, rel := range record.ArtFiles() {
+		if !artExists(actressDir, rel) {
+			missing = append(missing, rel)
+		}
+	}
+	return missing
+}
+
+// artExists 检查图片文件是否真的在磁盘上且非空。
 //
 // 只看 JSON 里的字段是不够的：写入字段与实际下载图片是两步，
 // 上次刮削中断会留下「有记录、没图片」的状态。
-func artExists(actressDir, coverRel string) bool {
-	if coverRel == "" {
+func artExists(actressDir, rel string) bool {
+	if rel == "" {
 		return false
 	}
-	info, err := os.Stat(filepath.Join(actressDir, filepath.FromSlash(coverRel)))
+	info, err := os.Stat(filepath.Join(actressDir, filepath.FromSlash(rel)))
 	return err == nil && !info.IsDir() && info.Size() > 0
 }
 

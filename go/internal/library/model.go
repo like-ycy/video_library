@@ -61,6 +61,19 @@ type ActressSummary struct {
 	Videos  []Video `json:"videos"`
 }
 
+// ArtFiles 返回边车里记录的图片相对路径：封面在前，截图在后。
+//
+// 顺序固定是为了让「缺哪个文件」的提示稳定可读。返回空切片表示这条记录里
+// 一个图片字段都没有 —— 那不是「图都在」，而是「压根没有图」，调用方必须
+// 用 len() 区分这两种情况。
+func (v Video) ArtFiles() []string {
+	files := make([]string, 0, len(v.Screenshots)+1)
+	if v.Cover != "" {
+		files = append(files, v.Cover)
+	}
+	return append(files, v.Screenshots...)
+}
+
 // Candidate 是扫描得到的一个待处理视频。
 type Candidate struct {
 	Actress    string
@@ -79,9 +92,21 @@ type Candidate struct {
 
 	// Scraped 表示边车 JSON 中已有该番号的记录。
 	Scraped bool
-	// MissingArt 表示有记录但封面文件不在磁盘上 —— 通常是上次刮削中断，
+	// MissingArt 表示有记录但图片不在磁盘上 —— 通常是上次刮削中断，
 	// 或被单独删掉了图片目录。UI 应把这类条目标为「需补图」。
+	//
+	// 除了「记录里的文件缺了」，还有一种情况同样为 true：记录里一个图片字段
+	// 都没有（边车来自别的工具、或从没刮到过图）。只查「记录里的文件在不在」
+	// 会把后者判成齐全。
 	MissingArt bool
+	// ArtDir 是该视频图片目录的绝对路径（<演员目录>/meta/<stem>）。
+	//
+	// 只给 UI 展示用：把「缺图」从一句结论变成「程序在找哪个目录」，
+	// 用户才能自己判断是路径不对还是文件真没下下来。
+	ArtDir string
+	// MissingFiles 是边车里记录了、但磁盘上不存在的图片（相对演员目录，正斜杠）。
+	// 为空既可能是齐全，也可能是记录里根本没记图片 —— 用 ArtFiles() 区分。
+	MissingFiles []string
 }
 
 // ── 路径计算 ──────────────────────────────────────────────────────────────
@@ -117,6 +142,16 @@ func ArtDir(actressDir, stem string) string {
 // cover / screenshots 字段的相对基准保持一致。
 func ArtRelPrefix(stem string) string {
 	return path.Join(MetaDirName, stem)
+}
+
+// JobID 返回一条刮削 job 的稳定标识，随 job 下发给 Python 并由事件原样回显。
+//
+// 用「演员目录名/文件名主干」而不是番号：同一番号可能对应多个文件
+// （X.mp4 与 X-c.mp4 经 NormalizeFanha 归一后同号），而事件只能靠这个标识
+// 绑回具体文件与其图片目录。同一演员目录内 stem 唯一（大小写不敏感的文件系统
+// 决定），加上目录名后全局唯一。
+func JobID(actress, stem string) string {
+	return actress + "/" + stem
 }
 
 // IsVideoFile 判断文件名是否为受支持的视频。

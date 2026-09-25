@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -535,6 +536,12 @@ type CandidateDTO struct {
 	FileSize   int64  `json:"fileSize"`
 	Scraped    bool   `json:"scraped"`
 	MissingArt bool   `json:"missingArt"`
+	// ArtDir 是该条目的图片目录，MissingFiles 是边车里记了但磁盘上没有的图片。
+	//
+	// 两者存在的唯一目的是把「缺图」这句话补完整：用户能看到程序实际在找哪个
+	// 目录、缺的是哪几个文件，而不是对着一个红色标签猜。
+	ArtDir       string   `json:"artDir"`
+	MissingFiles []string `json:"missingFiles"`
 }
 
 // ScanResultDTO 是扫描结果。
@@ -569,13 +576,15 @@ func (a *App) ScanLibrary(libraryID string) (ScanResultDTO, error) {
 	result := ScanResultDTO{Candidates: make([]CandidateDTO, 0, len(scan.Candidates))}
 	for _, candidate := range scan.Candidates {
 		result.Candidates = append(result.Candidates, CandidateDTO{
-			Actress:    candidate.Actress,
-			Fanha:      candidate.Fanha,
-			Stem:       candidate.Stem,
-			VideoFile:  candidate.VideoFile,
-			FileSize:   candidate.FileSize,
-			Scraped:    candidate.Scraped,
-			MissingArt: candidate.MissingArt,
+			Actress:      candidate.Actress,
+			Fanha:        candidate.Fanha,
+			Stem:         candidate.Stem,
+			VideoFile:    candidate.VideoFile,
+			FileSize:     candidate.FileSize,
+			Scraped:      candidate.Scraped,
+			MissingArt:   candidate.MissingArt,
+			ArtDir:       candidate.ArtDir,
+			MissingFiles: candidate.MissingFiles,
 		})
 	}
 	for _, issue := range scan.Issues {
@@ -740,9 +749,38 @@ func (a *App) storeHealth(key string, health scraper.Health) {
 // ── 内部实现 ──────────────────────────────────────────────────────────────
 
 type scrapePlan struct {
-	ref     config.LibraryRef
-	jobs    []scraper.Job
+	ref  config.LibraryRef
+	jobs []scraper.Job
+
+	// byID 是 job 标识 → 候选。事件靠标识绑回具体文件与其输出目录，
+	// 见 library.JobID 的说明。
+	byID map[string]library.Candidate
+
+	// byFanha 只用于兼容不带 job 标识的旧刮削器：那时只能按番号找。
+	//
+	// 同一番号有多个文件时它必然绑错（后写入的候选把先写入的覆盖掉会被刻意
+	// 避开，但「取哪一个」本身就没有正确答案），所以这条路径只保证「不崩」，
+	// 不保证「对」。真要修好旧组件，办法是升级刮削器。
 	byFanha map[string]library.Candidate
+}
+
+// at 按事件携带的标识取回候选。标识优先，番号是旧组件的回退。
+func (p scrapePlan) at(item scraper.Item) (library.Candidate, bool) {
+	if item.ID != "" {
+		candidate, ok := p.byID[item.ID]
+		return candidate, ok
+	}
+	candidate, ok := p.byFanha[item.Fanha]
+	return candidate, ok
+}
+
+// actresses 返回本次涉及的全部演员目录，用于写边车与事后复核。
+func (p scrapePlan) actresses() map[string]library.Candidate {
+	byActress := make(map[string]library.Candidate, len(p.byID))
+	for _, candidate := range p.byID {
+		byActress[candidate.Actress] = candidate
+	}
+	return byActress
 }
 
 func (a *App) planScrape(ref config.LibraryRef, stems []string, force bool) (scrapePlan, error) {
@@ -758,27 +796,58 @@ func (a *App) planScrape(ref config.LibraryRef, stems []string, force bool) (scr
 
 	plan := scrapePlan{
 		ref:     ref,
+		byID:    make(map[string]library.Candidate, len(stems)),
 		byFanha: make(map[string]library.Candidate, len(stems)),
 	}
+	var vanished []string
 	for _, stem := range stems {
 		candidate, ok := byStem[stem]
 		if !ok {
 			// 用户界面上选中的条目在扫描之后被移动或改名了。跳过而不是报错：
 			// 一个条目失效不该让整批刮削无法开始。
+			vanished = append(vanished, stem)
 			continue
 		}
-		plan.byFanha[candidate.Fanha] = candidate
+		id := library.JobID(candidate.Actress, candidate.Stem)
+		plan.byID[id] = candidate
+		if _, exists := plan.byFanha[candidate.Fanha]; !exists {
+			plan.byFanha[candidate.Fanha] = candidate
+		}
 		plan.jobs = append(plan.jobs, scraper.Job{
+			ID:    id,
 			Fanha: candidate.Fanha,
 			// 输出目录由 Go 计算，Python 因此不需要知道库的目录布局。
 			Out:   library.ArtDir(candidate.ActressDir, candidate.Stem),
 			Force: force,
 		})
 	}
+	for _, stem := range vanished {
+		a.appendLog(fmt.Sprintf("跳过 %s：扫描之后被移动或改名了", stem))
+	}
 	if len(plan.jobs) == 0 {
 		return scrapePlan{}, errors.New("选中的条目已不存在，请重新扫描")
 	}
+	a.logPlan(plan)
 	return plan, nil
+}
+
+// logPlan 把本次的 job 清单写进刮削日志。
+//
+// 以前整份日志里看不到「哪个番号写到哪个目录」—— 而排查「刮削成功但没有图」
+// 时，要回答的第一个问题就是它。顺带点出同番号的条目，说明它们共享一份元数据，
+// 免得用户以为有一条没刮。
+func (a *App) logPlan(plan scrapePlan) {
+	seen := make(map[string]string, len(plan.jobs))
+	for _, job := range plan.jobs {
+		a.appendLog(fmt.Sprintf("刮削目标 %s（番号 %s）→ %s", job.ID, job.Fanha, job.Out))
+		if first, ok := seen[job.Fanha]; ok {
+			a.appendLog(fmt.Sprintf(
+				"提示：%s 与 %s 番号相同（%s），共享同一份元数据，边车 JSON 只保留一条记录",
+				first, job.ID, job.Fanha))
+			continue
+		}
+		seen[job.Fanha] = job.ID
+	}
 }
 
 func (a *App) runScrape(ctx context.Context, store *index.Store, plan scrapePlan) {
@@ -794,17 +863,24 @@ func (a *App) runScrape(ctx context.Context, store *index.Store, plan scrapePlan
 	var (
 		collectedMu sync.Mutex
 		collected   = make(map[string][]library.Video)
+		failuresMu  sync.Mutex
+		failures    []string
 	)
 
 	callbacks := scraper.Callbacks{
-		Progress: func(fanha, stage string, percent float64) {
+		Progress: func(item scraper.Item, stage string, percent float64) {
 			a.emit(eventScrapeProgress, map[string]any{
-				"fanha": fanha, "stage": stage, "percent": percent,
+				"fanha": item.Fanha, "stage": stage, "percent": percent,
 			})
 		},
-		ItemDone: func(fanha string, data scraper.ItemData) {
-			candidate, ok := plan.byFanha[fanha]
+		ItemDone: func(item scraper.Item, data scraper.ItemData) {
+			candidate, ok := plan.at(item)
 			if !ok {
+				// 认不出这条事件属于哪个文件。以前这种情况会被静默丢掉，用户只看到
+				// 「少了一条」；写进日志才能发现是刮削器没回显 job 标识、还是标识
+				// 对不上。
+				a.appendLog(fmt.Sprintf(
+					"警告：收到无法归属的完成事件（job=%q 番号=%q），已忽略", item.ID, item.Fanha))
 				return
 			}
 			video := buildVideoRecord(candidate, data)
@@ -812,14 +888,24 @@ func (a *App) runScrape(ctx context.Context, store *index.Store, plan scrapePlan
 			collected[candidate.Actress] = append(collected[candidate.Actress], video)
 			collectedMu.Unlock()
 
+			// 把「写到哪个目录」与「记下哪些文件名」打进日志。Windows 上出问题时
+			// 这两条是判断「Go 记的路径」与「Python 实际写的路径」是否一致的唯一依据。
+			a.appendLog(fmt.Sprintf(
+				"完成 %s：封面=%s，截图=%d/%d 张",
+				item, video.Cover, len(data.ShotFiles), data.TotalShots))
+
 			a.emit(eventScrapeItemDone, map[string]any{
-				"fanha": fanha, "title": data.Title,
+				"fanha": item.Fanha, "title": data.Title,
 				"shots": len(data.ShotFiles), "totalShots": data.TotalShots,
 			})
 		},
-		ItemFailed: func(fanha, reason, detail string) {
+		ItemFailed: func(item scraper.Item, reason, detail string) {
+			failuresMu.Lock()
+			failures = append(failures, fmt.Sprintf("%s（%s）", item, scraper.ReasonText(reason)))
+			failuresMu.Unlock()
+
 			a.emit(eventScrapeItemFailed, map[string]any{
-				"fanha": fanha, "reason": reason,
+				"fanha": item.Fanha, "reason": reason,
 				"message":   scraper.ReasonText(reason),
 				"detail":    detail,
 				"retryable": scraper.Retryable(reason),
@@ -833,6 +919,22 @@ func (a *App) runScrape(ctx context.Context, store *index.Store, plan scrapePlan
 	// 无论成功、部分失败还是被取消，都要把已拿到的结果写进边车 JSON ——
 	// 用户取消了后 80 条，前 20 条的成功结果是有效的，丢掉它们等于白干。
 	merged, mergeErr := a.persistSidecars(plan, collected)
+
+	// 失败项完全不碰边车 JSON：如果这一条以前刮过，旧记录会原样留着，
+	// 而它的图片可能早就没了。扫描页于是显示「缺图」，却没有任何地方解释
+	// 为什么 —— 这句话就是解释。
+	failuresMu.Lock()
+	failedCount := len(failures)
+	failureLines := append([]string(nil), failures...)
+	failuresMu.Unlock()
+	if failedCount > 0 {
+		a.appendLog(fmt.Sprintf(
+			"本次有 %d 条失败，边车 JSON 未被修改：%s —— 之前刮过的条目会保留旧记录，扫描页可能显示缺图",
+			failedCount, strings.Join(failureLines, "、")))
+	}
+
+	// 复核刚落盘的边车：JSON 里记的图片是不是真的在磁盘上。
+	a.verifyPersisted(plan, merged)
 
 	payload := map[string]any{
 		"ok":           result.Summary.OK,
@@ -901,10 +1003,7 @@ func (a *App) persistSidecars(
 	plan scrapePlan,
 	collected map[string][]library.Video,
 ) ([]string, error) {
-	byActressDir := make(map[string]library.Candidate)
-	for _, candidate := range plan.byFanha {
-		byActressDir[candidate.Actress] = candidate
-	}
+	byActressDir := plan.actresses()
 
 	var (
 		merged  []string
@@ -915,14 +1014,63 @@ func (a *App) persistSidecars(
 		if !ok {
 			continue
 		}
+		// 同一番号的多个文件共享一份元数据，边车按番号就地覆盖，最后一条留下。
+		// 排序让「文件名主干就等于番号」的基准文件胜出：否则同一批刮削的两次
+		// 运行可能记下不同的 stem，图片目录随之漂移，另一份图就成了孤儿。
+		sort.SliceStable(videos, func(i, j int) bool {
+			baseI := strings.EqualFold(videos[i].Stem, videos[i].Fanha)
+			baseJ := strings.EqualFold(videos[j].Stem, videos[j].Fanha)
+			if baseI != baseJ {
+				return !baseI
+			}
+			return videos[i].Stem < videos[j].Stem
+		})
+
 		sidecarPath := library.SidecarPath(candidate.ActressDir, actress)
 		if _, err := library.MergeVideos(sidecarPath, actress, videos); err != nil {
 			failure = errors.Join(failure, fmt.Errorf("写入 %s: %w", actress, err))
+			a.appendLog(fmt.Sprintf("写入边车失败 %s：%v", sidecarPath, err))
 			continue
 		}
+		a.appendLog(fmt.Sprintf("已写入边车 %s（本次 %d 条）", sidecarPath, len(videos)))
 		merged = append(merged, actress)
 	}
 	return merged, failure
+}
+
+// verifyPersisted 复核刚落盘的边车：JSON 里记的图片是不是真的在磁盘上。
+//
+// 这是「有 json、没有图片」这类问题的照妖镜。以前只有用户自己翻资源管理器才会
+// 发现，而且日志里没有任何一行能解释为什么 —— 现在刮削结束就会把期望路径与
+// 缺失文件直接写进日志，Windows 上不必再靠猜。
+func (a *App) verifyPersisted(plan scrapePlan, actresses []string) {
+	byActressDir := plan.actresses()
+	for _, actress := range actresses {
+		candidate, ok := byActressDir[actress]
+		if !ok {
+			continue
+		}
+		dir := candidate.ActressDir
+		summary, err := library.ReadSummary(library.SidecarPath(dir, actress))
+		if err != nil {
+			a.appendLog(fmt.Sprintf("无法复核边车 %s：%v", library.SidecarPath(dir, actress), err))
+			continue
+		}
+		for _, video := range summary.Videos {
+			files := video.ArtFiles()
+			if len(files) == 0 {
+				a.appendLog(fmt.Sprintf(
+					"警告：%s/%s 的边车记录里没有任何图片字段，扫描页会显示缺图（图片目录应为 %s）",
+					actress, video.Stem, library.ArtDir(dir, video.Stem)))
+				continue
+			}
+			if missing := library.MissingArtFiles(dir, video); len(missing) > 0 {
+				a.appendLog(fmt.Sprintf(
+					"警告：%s/%s 有 %d 个图片文件不在磁盘上（%s），扫描页会显示缺图",
+					actress, video.Stem, len(missing), strings.Join(missing, "、")))
+			}
+		}
+	}
 }
 
 func fatalMessage(result scraper.Result) string {

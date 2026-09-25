@@ -24,16 +24,27 @@ type Job struct {
 	Fanha string `json:"fanha"`
 	Out   string `json:"out"`
 	Force bool   `json:"force,omitempty"`
+
+	// ID 是本条 job 的稳定标识（协议字段名 job），Python 在每条事件里原样回显。
+	//
+	// 事件靠它绑回具体文件与其输出目录。番号不足以担此责任：`X.mp4` 与
+	// `X-c.mp4` 归一到同一番号，用番号做键会让两条 job 的事件互相覆盖。
+	// 留 omitempty 是为了让「不带 ID」这种调用方式仍然产出以前那种 job 行
+	// （测试与手工调用用得上）。
+	ID string `json:"job,omitempty"`
 }
 
 // Callbacks 是运行期回调。
 //
 // 回调在读取 goroutine 上同步调用，实现里不要做阻塞操作，
 // 否则会把事件流堵住、进而让看门狗误判为挂起。
+//
+// 每个回调都带 Item：调用方要靠它把事件绑回自己下发的那条 job，
+// 不能靠番号猜（见 Item 的说明）。
 type Callbacks struct {
-	Progress   func(fanha, stage string, percent float64)
-	ItemDone   func(fanha string, data ItemData)
-	ItemFailed func(fanha, reason, detail string)
+	Progress   func(item Item, stage string, percent float64)
+	ItemDone   func(item Item, data ItemData)
+	ItemFailed func(item Item, reason, detail string)
 	Log        func(line string)
 }
 
@@ -369,15 +380,15 @@ func consumeEvents(stdout io.Reader, activity *activityClock, cb Callbacks) Resu
 		switch event.Type {
 		case EventProgress:
 			if cb.Progress != nil {
-				cb.Progress(event.Fanha, event.Stage, event.Percent)
+				cb.Progress(itemOf(event), event.Stage, event.Percent)
 			}
 		case EventItemDone:
 			if event.Data != nil && cb.ItemDone != nil {
-				cb.ItemDone(event.Fanha, *event.Data)
+				cb.ItemDone(itemOf(event), *event.Data)
 			}
 		case EventItemFailed:
 			if cb.ItemFailed != nil {
-				cb.ItemFailed(event.Fanha, event.Reason, event.Detail)
+				cb.ItemFailed(itemOf(event), event.Reason, event.Detail)
 			}
 		case EventDone:
 			if event.Summary != nil {
@@ -417,6 +428,11 @@ func (c *activityClock) elapsed() time.Duration {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return time.Since(c.last)
+}
+
+// itemOf 把一条事件还原成「它属于哪条 job」。
+func itemOf(event Event) Item {
+	return Item{ID: event.ID, Fanha: event.Fanha}
 }
 
 func exitCode(err error) int {

@@ -86,6 +86,15 @@ def _dump(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
+def _ref(job: str) -> dict[str, str]:
+    """把 job 标识放进事件载荷（协议字段名 `job`）。
+
+    非空才写入：这个字段是可选的 —— 老版本 Go 忽略它即可正常工作，而空值写进去
+    只会让每条事件多一个恒为空的键，线上日志与单测断言都更难读。
+    """
+    return {"job": job} if job else {}
+
+
 def _write_line(line: str) -> None:
     # 每行独立 flush：Go 侧按行读取，缓冲会让进度长时间不可见。
     # 优先走二进制 buffer：TextIOWrapper 的字符集即使 reconfigure 失败，
@@ -116,7 +125,7 @@ def _write(event_type: str, payload: dict[str, Any]) -> None:
     _write_line(_dump({"v": PROTOCOL_VERSION, "type": event_type, **payload}))
 
 
-def progress(fanha: str, stage: str, percent: float) -> None:
+def progress(fanha: str, stage: str, percent: float, job: str = "") -> None:
     """上报单条 job 的进度。percent 取值 0.0–1.0。"""
     if stage not in STAGES:
         raise ProtocolError(f"未知 stage: {stage}")
@@ -124,22 +133,23 @@ def progress(fanha: str, stage: str, percent: float) -> None:
         "progress",
         {
             "fanha": fanha,
+            **_ref(job),
             "stage": stage,
             "percent": round(min(max(percent, 0.0), 1.0), 4),
         },
     )
 
 
-def item_done(fanha: str, data: dict[str, Any]) -> None:
+def item_done(fanha: str, data: dict[str, Any], job: str = "") -> None:
     """单条成功。data 为元数据载荷，不含路径字段（路径由 Go 侧补）。"""
-    _write("item_done", {"fanha": fanha, "data": data})
+    _write("item_done", {"fanha": fanha, **_ref(job), "data": data})
 
 
-def item_failed(fanha: str, reason: str, detail: str = "") -> None:
+def item_failed(fanha: str, reason: str, detail: str = "", job: str = "") -> None:
     """单条失败。reason 必须是 REASONS 中的值。"""
     if reason not in REASONS:
         raise ProtocolError(f"未知 reason: {reason}")
-    _write("item_failed", {"fanha": fanha, "reason": reason, "detail": detail})
+    _write("item_failed", {"fanha": fanha, **_ref(job), "reason": reason, "detail": detail})
 
 
 def done(summary: dict[str, int]) -> None:

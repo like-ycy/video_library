@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -202,5 +203,117 @@ func TestScanMarksUnscrapedAndUnparsable(t *testing.T) {
 
 	if len(result.Issues) != 1 || result.Issues[0].Kind != IssueUnparsableName {
 		t.Fatalf("命名不规范的视频应产生一条 Issue，实际 %+v", result.Issues)
+	}
+}
+
+// scanOne 建一个只含一条视频的库（record 写在边车里），返回该候选与演员目录。
+//
+// artFiles 是额外要落盘的图片（相对演员目录）—— 用来构造「哪些图在、哪些不在」
+// 的具体形态。传 nil 就是「边车有记录、磁盘上一张图也没有」。
+func scanOne(t *testing.T, actress string, record Video, artFiles ...string) (Candidate, string) {
+	t.Helper()
+
+	root := testDir(t)
+	actressDir := ActressDir(root, actress)
+	if err := os.MkdirAll(actressDir, 0o755); err != nil {
+		t.Fatalf("建演员目录失败: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(actressDir, "IPZZ-001.mp4"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("建视频文件失败: %v", err)
+	}
+	for _, rel := range artFiles {
+		path := filepath.Join(actressDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("建图片目录失败: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("jpg"), 0o644); err != nil {
+			t.Fatalf("建图片失败: %v", err)
+		}
+	}
+	if _, err := MergeVideos(
+		SidecarPath(actressDir, actress), actress, []Video{record}); err != nil {
+		t.Fatalf("写边车失败: %v", err)
+	}
+
+	result, err := Scan(root)
+	if err != nil {
+		t.Fatalf("扫描失败: %v", err)
+	}
+	if len(result.Candidates) != 1 {
+		t.Fatalf("应识别出 1 个视频，实际 %d", len(result.Candidates))
+	}
+	return result.Candidates[0], actressDir
+}
+
+// TestScanFlagsMissingScreenshots 钉住「有 json、没有 images」这种形态。
+//
+// 旧实现只看封面：封面还在、截图整个目录丢了时，UI 仍显示「已刮削」，
+// 而用户在磁盘上看到的是「只有 json 和一张封面」——两边说的不是一件事。
+func TestScanFlagsMissingScreenshots(t *testing.T) {
+	art := "meta/IPZZ-001"
+	record := Video{
+		Fanha: "ipzz-001", Stem: "IPZZ-001",
+		Cover: art + "/cover.jpg",
+		Screenshots: []string{
+			art + "/images/1.jpg",
+			art + "/images/2.jpg",
+		},
+	}
+	// 只把封面建出来，截图一张都不建。
+	candidate, actressDir := scanOne(t, "演员F", record, art+"/cover.jpg")
+
+	if !candidate.MissingArt {
+		t.Error("截图缺失也应算缺图，否则界面上看不出问题")
+	}
+	want := []string{art + "/images/1.jpg", art + "/images/2.jpg"}
+	if !slices.Equal(candidate.MissingFiles, want) {
+		t.Errorf("MissingFiles = %v，期望 %v", candidate.MissingFiles, want)
+	}
+	if candidate.ArtDir != ArtDir(actressDir, "IPZZ-001") {
+		t.Errorf("ArtDir = %q，期望图片目录的绝对路径", candidate.ArtDir)
+	}
+}
+
+// TestScanFlagsRecordWithoutArtFields 钉住「记录里压根没有图片字段」。
+//
+// 边车来自别的工具（或从没刮到过图）时，一个可比较的路径都没有。这时不能因为
+// 「没有文件缺失」就判成齐全 —— 那是「缺图」最容易被漏掉的一种形态。
+func TestScanFlagsRecordWithoutArtFields(t *testing.T) {
+	candidate, _ := scanOne(t, "演员G", Video{Fanha: "ipzz-001", Stem: "IPZZ-001"})
+
+	if !candidate.MissingArt {
+		t.Error("记录里没有任何图片字段，应算缺图")
+	}
+	if len(candidate.MissingFiles) != 0 {
+		t.Errorf("没有记录就没有可列的缺失文件，实际 %v", candidate.MissingFiles)
+	}
+}
+
+// TestScanAcceptsCompleteArt 确认加固之后没有把正常的条目误判成缺图。
+func TestScanAcceptsCompleteArt(t *testing.T) {
+	art := "meta/IPZZ-001"
+	record := Video{
+		Fanha: "ipzz-001", Stem: "IPZZ-001",
+		Cover:       art + "/cover.jpg",
+		Screenshots: []string{art + "/images/1.jpg", art + "/images/2.jpg"},
+	}
+	candidate, _ := scanOne(t, "演员H", record,
+		art+"/cover.jpg", art+"/images/1.jpg", art+"/images/2.jpg")
+
+	if candidate.MissingArt {
+		t.Errorf("图片齐全时不该报缺图，MissingFiles = %v", candidate.MissingFiles)
+	}
+}
+
+func TestJobIDIsUniquePerFile(t *testing.T) {
+	// 同一番号的两个文件必须有不同标识 —— 否则事件又会互相覆盖。
+	a := JobID("演员A", "IPZZ-001")
+	b := JobID("演员A", "IPZZ-001-c")
+	if a == b {
+		t.Fatalf("同番号的不同文件必须有不同的 job 标识：%q", a)
+	}
+	if a != "演员A/IPZZ-001" {
+		t.Errorf("JobID = %q，期望 演员A/IPZZ-001", a)
 	}
 }

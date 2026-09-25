@@ -10,6 +10,8 @@ URL 拼法与选择器迁移自既有实现（video_scraping/src/generate.py）�
 
 from __future__ import annotations
 
+from urllib.parse import urljoin
+
 from bs4 import BeautifulSoup
 
 from ..models import VideoMeta
@@ -17,6 +19,30 @@ from .base import Site
 
 SITE = "https://www.javlibrary.com"
 SEARCH_URL = f"{SITE}/cn/vl_searchbyid.php?keyword="
+
+
+def _absolute(src: str) -> str:
+    """把站点给出的图片地址补成绝对 URL。
+
+    `src` 有四种形态，早期实现只处理了其中两种：
+
+    | 形态 | 例子 | 早期实现 |
+    |---|---|---|
+    | 绝对 URL | `https://pics.dmm.co.jp/a.jpg` | ✅ 原样用 |
+    | 协议相对 | `//pics.dmm.co.jp/a.jpg` | ✅ 补 `https:` |
+    | 站内相对 | `/imgs/a.jpg` | ❌ 原样丢给 httpx |
+    | 其它相对 | `imgs/a.jpg` | ❌ 原样丢给 httpx |
+
+    后两种会被 httpx 以 `UnsupportedProtocol` 拒绝 —— 它混在重试里只留一行
+    warning，看起来像「网络抖动」，实际是解析漏了一步，表现为「日志有下载
+    动作、磁盘上什么都没有」。`urljoin` 一次覆盖全部四种，不必再枚举前缀。
+    """
+    src = src.strip()
+    if not src:
+        # 空 src 绝不能交给 urljoin：它会返回 base 本身，于是得到一个
+        # 「合法的垃圾地址」，`is_usable()` 会误判成拿到了封面。
+        return ""
+    return urljoin(SITE, src)
 
 
 class JavLibrarySite(Site):
@@ -59,15 +85,11 @@ class JavLibrarySite(Site):
         ]
 
         cover_tag = soup.select_one("#video_jacket img#video_jacket_img")
-        cover = str(cover_tag.get("src", "")) if cover_tag else ""
-        if cover.startswith("//"):
-            cover = "https:" + cover
+        cover = _absolute(str(cover_tag.get("src", "")) if cover_tag else "")
 
         shots: list[str] = []
         for img in soup.select("div.previewthumbs img"):
-            src = str(img.get("src", ""))
-            if src.startswith("//"):
-                src = "https:" + src
+            src = _absolute(str(img.get("src", "")))
             if src:
                 shots.append(src)
 
