@@ -111,7 +111,7 @@ export function VideoCard({
       </Card>
     );
   return (
-    <Card className="video-card p-0 gap-0 overflow-hidden">
+    <Card className="video-card p-0 gap-0">
       {/* 主区域不能用 xwang-ui Button：inline-flex + control-h 会把海报压成细条 */}
       <button
         type="button"

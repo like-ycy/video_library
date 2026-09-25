@@ -48,7 +48,8 @@
   flex-direction: column;
   width: 100%;
   min-width: 0;
-  overflow: hidden;
+  /* overflow: hidden 会触发 grid 行高塌陷 bug（见 views.css .video-card 注释） */
+  overflow: clip;
 }
 
 .video-card-main {

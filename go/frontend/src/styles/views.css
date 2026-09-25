@@ -100,7 +100,13 @@
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  overflow: hidden;
+  /*
+   * 不能用 overflow: hidden —— 它是 grid item 且自身是 flex 容器时，
+   * Chromium 会把行高的内在贡献算成 ~7px，卡片在「全部演员 / 全部影片」
+   * 这类大列表里塌成细条（数据越多塌得越狠）。clip 的裁剪效果相同，
+   * 但不触发该 bug；不支持 clip 的旧引擎回退为 visible，由海报圆角兜底。
+   */
+  overflow: clip;
   cursor: pointer;
   transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
   text-align: left;
@@ -149,6 +155,11 @@
   flex: 0 0 auto;
   align-self: stretch;
   object-fit: cover;
+}
+
+/* 卡片 8px 圆角 − 1px 边框；overflow:clip 不被支持时由这里兜底圆角 */
+.video-card .poster {
+  border-radius: calc(var(--radius-card) - 1px) calc(var(--radius-card) - 1px) 0 0;
 }
 
 .video-card .poster img {
