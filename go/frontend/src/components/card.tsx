@@ -112,9 +112,10 @@ export function VideoCard({
     );
   return (
     <Card className="video-card p-0 gap-0 overflow-hidden">
-      <Button
-        variant="ghost"
-        className="h-auto w-full flex-col gap-0 rounded-none p-0 whitespace-normal text-left"
+      {/* 主区域不能用 xwang-ui Button：inline-flex + control-h 会把海报压成细条 */}
+      <button
+        type="button"
+        className="video-card-main"
         onClick={() => onOpen(item)}
         aria-label={`查看 ${item.fanha}`}
       >
@@ -146,7 +147,7 @@ export function VideoCard({
             <span>{item.rating ? `★ ${item.rating}` : ""}</span>
           </div>
         </div>
-      </Button>
+      </button>
       <Button
         variant="ghost"
         size="sm"

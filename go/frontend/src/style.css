@@ -37,3 +37,58 @@
 .global-search .ms {
   z-index: 1;
 }
+
+/*
+ * 海报卡片必须撑满网格单元，且高度只由 aspect-ratio 决定。
+ * 放在无层规则里：避免 xwang-ui Button/Card 的 utilities（control-h、inline-flex、
+ * items-center）把海报压成细条 —— 全量列表大量 lazy 图未加载时尤其明显。
+ */
+.video-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.video-card-main {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  white-space: normal;
+}
+
+.video-card .poster {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 2 / 3;
+  /* minmax(200px) 列宽的 2:3，防止宽度解析异常时高度塌成 0 */
+  min-height: 280px;
+  flex: 0 0 auto;
+  align-self: stretch;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.video-card .poster img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+}
