@@ -71,6 +71,11 @@ export function IssuesView({
   }, [libraryId, version, task.indexVersion]);
   const groups: Record<string, Issue[]> = {};
   for (const issue of issues) (groups[issue.kind] ??= []).push(issue);
+  // 每组内按番号自然序正序展示。
+  for (const rows of Object.values(groups))
+    rows.sort((a, b) =>
+      a.subject.localeCompare(b.subject, "zh-Hans-CN", { numeric: true }),
+    );
   return (
     <div className="page">
       <PageHeader title="异常与修复" sub="按问题类型分组，附带修复建议">

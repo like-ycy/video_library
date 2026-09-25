@@ -9,6 +9,8 @@ import (
 //
 // 「看完」定义为进度超过总时长的 97%，或进度超过 30 秒且文件已缺失时仍保留。
 // 用户可能只是拖到片尾；阈值避免把片尾几秒当成未完成。
+//
+// 列表按番号自然序（前缀字母、再数字值）返回，与全部影片页的番号序一致。
 func (s *Store) ListContinue(ctx context.Context, libID string, limit int) ([]Row, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 60
@@ -18,12 +20,12 @@ func (s *Store) ListContinue(ctx context.Context, libID string, limit int) ([]Ro
 	    AND ud.watch_position_ms > 30000
 	    AND (v.duration_ms <= 0 OR ud.watch_position_ms < v.duration_ms * 97 / 100)
 	    AND v.missing = 0
-	  ORDER BY ud.last_played_at DESC, ud.watch_position_ms DESC
+	  ORDER BY ` + fanhaPrefixExpr + ` ASC, ` + fanhaNumberExpr + ` ASC, v.fanha ASC
 	  LIMIT ?`
 	return s.queryRows(ctx, query, libID, limit)
 }
 
-// ListRecent 返回最近播放记录，按 last_played_at 倒序。
+// ListRecent 返回最近播放记录，按番号自然序正序。
 func (s *Store) ListRecent(ctx context.Context, libID string, limit int) ([]Row, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 60
@@ -33,7 +35,7 @@ func (s *Store) ListRecent(ctx context.Context, libID string, limit int) ([]Row,
 	    AND COALESCE(ud.play_count, 0) > 0
 	    AND ud.last_played_at IS NOT NULL
 	    AND ud.last_played_at <> ''
-	  ORDER BY ud.last_played_at DESC
+	  ORDER BY ` + fanhaPrefixExpr + ` ASC, ` + fanhaNumberExpr + ` ASC, v.fanha ASC
 	  LIMIT ?`
 	return s.queryRows(ctx, query, libID, limit)
 }

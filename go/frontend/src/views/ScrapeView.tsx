@@ -77,7 +77,10 @@ export function ScrapeView({
       active = false;
     };
   }, [libraryId, version, task.indexVersion]);
-  const candidates = scan.candidates ?? [];
+  // 候选列表按番号自然序正序展示（IPX-9 排在 IPX-100 前面）。
+  const candidates = [...(scan.candidates ?? [])].sort((a, b) =>
+    a.fanha.localeCompare(b.fanha, "zh-Hans-CN", { numeric: true }),
+  );
   const visible = candidates.filter(
     (c) => !onlyUnscraped || !c.scraped || c.missingArt,
   );

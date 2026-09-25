@@ -100,6 +100,17 @@ type Sort struct {
 	Desc  bool
 }
 
+// fanhaPrefixExpr / fanhaNumberExpr 把番号拆成「字母前缀 + 数字」两部分。
+//
+// 直接 ORDER BY fanha 是字典序：IPX-100 会排在 IPX-9 前面。番号由
+// NormalizeFanha 归一为 前缀-数字 形态，所以按前缀再按数值排序就是自然的番号序。
+// 没有连字符的异常值：instr 找不到时前缀取整串、数字部分为空串（CAST 得 0），
+// 会聚在一起排在最前，由末尾的 v.fanha 兜底保证稳定。
+const (
+	fanhaPrefixExpr = "substr(v.fanha, 1, instr(v.fanha || '-', '-') - 1)"
+	fanhaNumberExpr = "CAST(substr(v.fanha, instr(v.fanha, '-') + 1) AS INTEGER)"
+)
+
 const rowColumns = `
   v.id, v.library_id, v.actress, v.fanha, v.stem, v.title, v.release_date,
   v.site_length_min, v.duration_ms, v.genres, v.cast_list, v.cover_rel,
@@ -165,7 +176,19 @@ func (s *Store) QueryVideos(
 	}
 	// 次级排序键固定，保证分页时顺序稳定 —— 否则同一批数据在翻页间可能重复
 	// 或漏掉。
-	order := fmt.Sprintf(" ORDER BY %s %s, v.fanha ASC", column, direction)
+	var order string
+	if sort.Field == SortByFanha {
+		// 番号排序用自然序：先前缀字母、再数字值，而不是字典序。
+		order = fmt.Sprintf(
+			" ORDER BY %s %s, %s %s, v.fanha ASC",
+			fanhaPrefixExpr, direction, fanhaNumberExpr, direction,
+		)
+	} else {
+		order = fmt.Sprintf(
+			" ORDER BY %s %s, %s ASC, %s ASC, v.fanha ASC",
+			column, direction, fanhaPrefixExpr, fanhaNumberExpr,
+		)
+	}
 
 	if limit <= 0 {
 		limit = 200

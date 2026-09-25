@@ -43,8 +43,9 @@ export function WatchView({
   const [query, setQuery] = useState(keyword);
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [favorite, setFavorite] = useState(false);
-  const [sort, setSort] = useState("release_date");
-  const [desc, setDesc] = useState(true);
+  // 番号正序是全部影片与演员视频的默认排序。
+  const [sort, setSort] = useState("fanha");
+  const [desc, setDesc] = useState(false);
   const [showActors, setShowActors] = useState(mode === "actresses");
   const [page, setPage] = useState(1);
   const [items, setItems] = useState<Video[]>([]);
@@ -55,6 +56,14 @@ export function WatchView({
   const { task } = useTasks();
   const { notify } = useFeedback();
   const request = useRef(0);
+  // 演员页选中具体演员后固定按番号正序，排序控件一并停用。
+  const forceFanha = mode === "actresses" && actor !== "";
+  const effSort = forceFanha ? "fanha" : sort;
+  const effDesc = forceFanha ? false : desc;
+  // 演员名按名称正序（中文按拼音，数字段按数值）。
+  const sortedActors = [...actors].sort((a, b) =>
+    a.actress.localeCompare(b.actress, "zh-Hans-CN", { numeric: true }),
+  );
   useEffect(() => {
     setSearch(keyword);
     setQuery(keyword);
@@ -111,7 +120,7 @@ export function WatchView({
         IncludeMissing: false,
         MinDurationMs: 0,
       },
-      { Field: sort, Desc: desc },
+      { Field: effSort, Desc: effDesc },
       page,
       PAGE_SIZE,
     )
@@ -146,8 +155,8 @@ export function WatchView({
     query,
     selectedGenres,
     favorite,
-    sort,
-    desc,
+    effSort,
+    effDesc,
     page,
     version,
     refreshToken,
@@ -221,7 +230,7 @@ export function WatchView({
             >
               全部演员<span>{actors.length}位</span>
             </Button>
-            {actors
+            {sortedActors
               .filter((a) =>
                 a.actress.toLowerCase().includes(actorSearch.toLowerCase()),
               )
@@ -278,13 +287,18 @@ export function WatchView({
               仅收藏
             </Button>
             <Select
-              value={sort}
+              value={effSort}
+              disabled={forceFanha}
               onValueChange={(value) => {
                 setSort(value);
                 setPage(1);
               }}
             >
-              <SelectTrigger aria-label="排序" className="w-[150px]">
+              <SelectTrigger
+                aria-label="排序"
+                title={forceFanha ? "已选择演员，固定按番号正序" : undefined}
+                className="w-[150px]"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -306,6 +320,8 @@ export function WatchView({
             <Button
               variant="secondary"
               size="sm"
+              disabled={forceFanha}
+              title={forceFanha ? "已选择演员，固定按番号正序" : undefined}
               onClick={() => {
                 setDesc((v) => !v);
                 setPage(1);

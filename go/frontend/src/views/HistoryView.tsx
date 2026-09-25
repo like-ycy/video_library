@@ -50,7 +50,7 @@ export function HistoryView({
       <PageHeader
         title={kind === "continue" ? "继续观看" : "最近播放"}
         sub={
-          kind === "continue" ? "有播放进度且尚未看完" : "按最近播放时间倒序"
+          kind === "continue" ? "有播放进度且尚未看完 · 按番号正序" : "按番号正序"
         }
       >
         <RefreshButton
