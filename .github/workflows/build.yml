@@ -86,14 +86,12 @@ jobs:
       # Windows runner 自带的 Go 版本与 go.mod 不一定对齐；与 macOS job 一样
       # 按 go.mod 锁定，避免「本机过了、CI 挂了」的版本漂移。
       #
-      # cache-dependency-path 必须指向 go/go.mod：setup-go 默认在仓库根找
-      # go.mod 算缓存 key，找不到只会告警且不恢复缓存。
       - name: 安装 Go
         uses: actions/setup-go@v7
         with:
           go-version-file: go/go.mod
-          cache-dependency-path: go/go.mod
-          cache: true
+          # Tag 之间缓存隔离，发布 job 上传的缓存无法由下个 tag 复用。
+          cache: false
 
       - name: 安装 uv
         uses: astral-sh/setup-uv@v7
@@ -268,9 +266,8 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: go/go.mod
-          # 同 Windows：go.mod 在 go/ 下，不写路径会 Restore cache failed。
-          cache-dependency-path: go/go.mod
-          cache: true
+          # Tag 之间缓存隔离，发布 job 上传的缓存无法由下个 tag 复用。
+          cache: false
 
       - name: 安装 uv
         uses: astral-sh/setup-uv@v7
