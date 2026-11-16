@@ -4,9 +4,10 @@ import { call } from "../api";
 import { useFeedback } from "../feedback";
 import { useTasks } from "../tasks";
 import { formatSize } from "../format.js";
-import type { Candidate, Health, ScanResult } from "../types";
+import type { Candidate, Component, Health, ScanResult } from "../types";
 import { EmptyState, PageHeader, StatusBadge } from "../components/shell";
 import { TaskProgress } from "./TaskMonitorView";
+import { ComponentPrompt } from "../components/componentInstaller";
 /**
  * 缺图时给出悬停提示：程序到底在找哪个目录、缺哪几个文件。
  *
@@ -34,6 +35,8 @@ export function ScrapeView({
   const [onlyUnscraped, setOnlyUnscraped] = useState(true);
   const [force, setForce] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
+  // 组件状态决定要不要在顶部给出「还差一步下载」的提示。
+  const [scraper, setScraper] = useState<Component | null>(null);
   const [healthError, setHealthError] = useState("");
   const [scanError, setScanError] = useState("");
   const [version, setVersion] = useState(0);
@@ -59,6 +62,12 @@ export function ScrapeView({
       .finally(() => {
         if (active) setLoading(false);
       });
+    call("ListComponents")
+      .then((list) => {
+        if (active)
+          setScraper((list ?? []).find((c) => c.name === "scraper") ?? null);
+      })
+      .catch(() => undefined);
     // 进页面查一次即可：结果有后端 TTL 缓存兜底，不必每次重跑 doctor。
     call("ScraperHealth", false)
       .then((value) => {
@@ -122,6 +131,14 @@ export function ScrapeView({
         </EmptyState>
       ) : (
         <div className="scrape-main">
+          {scraper && !scraper.path && scraper.onDemand && (
+            <ComponentPrompt
+              component={scraper}
+              // 装完就重跑这个 effect：健康检查从「未找到刮削器」变成真实结果，
+              // 提示条也随之消失。
+              onInstalled={() => setVersion((n) => n + 1)}
+            />
+          )}
           <div className="scrape-bar">
             <Button disabled={locked} onClick={() => setVersion((n) => n + 1)}>
               扫描

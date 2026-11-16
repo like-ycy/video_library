@@ -882,3 +882,43 @@ table.candidates input[type='checkbox'] {
     grid-template-columns: 1fr;
   }
 }
+
+/* 刮削页的「还差一步」提示条。
+   用左侧强调边而不是整块告警色：它不是错误，只是一个待完成的操作，
+   画成红色会让人以为环境坏了。 */
+.component-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 16px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.component-prompt > div:first-child {
+  flex: 1 1 260px;
+}
+
+.component-prompt p {
+  margin: 2px 0 0;
+  font-size: var(--fs-sm);
+}
+
+.component-prompt-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 220px;
+}
+
+.component-prompt-progress > *:first-child {
+  flex: 1;
+}
+
+.component-prompt .text-danger {
+  flex: 1 1 100%;
+}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -13,12 +13,21 @@ import {
   DialogTitle,
   Input,
   Label,
+  Switch,
 } from "xwang-ui";
 import { call } from "../api";
 import { useFeedback } from "../feedback";
 import { getThemePreference, setThemePreference } from "../theme.js";
-import type { Config, EnvReport, Health, Library, Paths } from "../types";
+import type {
+  Component,
+  Config,
+  EnvReport,
+  Health,
+  Library,
+  Paths,
+} from "../types";
 import { PageHeader } from "../components/shell";
+import { ComponentCard } from "../components/componentInstaller";
 
 const TITLES: Record<string, string> = {
   library: "视频库管理",
@@ -42,6 +51,7 @@ export function SettingsView({
   selectLibrary: (id: string) => void;
 }) {
   const [config, setConfig] = useState<Config | null>(null);
+  const [components, setComponents] = useState<Component[]>([]);
   const [paths, setPaths] = useState<Paths | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState("");
@@ -87,6 +97,12 @@ export function SettingsView({
           if (active) setLoadError(String(error));
         });
     if (section === "scraper")
+      call("ListComponents")
+        .then((value) => {
+          if (active) setComponents(value ?? []);
+        })
+        .catch(() => undefined);
+    if (section === "scraper")
       call("ScraperHealth", force)
         .then((value) => {
           if (active) {
@@ -112,6 +128,23 @@ export function SettingsView({
       window.removeEventListener("cinevault:theme-changed", changed);
     };
   }, [section, version]);
+  // 组件状态变化后同步刷新健康检查：不然同一页上会同时出现
+  // 「组件已就绪」和「刮削器不可用」——后者是安装前查到的旧结论。
+  const reloadComponents = useCallback(() => {
+    call("ListComponents")
+      // 后端在组件目录不可用时返回空数组；null 兜底是为了旧版本后端。
+      .then((list) => setComponents(list ?? []))
+      .catch(() => undefined);
+    call("ScraperHealth", true)
+      .then((value) => {
+        setHealth(value);
+        setHealthError("");
+      })
+      .catch((error) => {
+        setHealth(null);
+        setHealthError(String(error));
+      });
+  }, []);
   function update<K extends keyof Config>(key: K, value: Config[K]) {
     setConfig((old) => old && { ...old, [key]: value });
   }
@@ -126,6 +159,9 @@ export function SettingsView({
         ...patch,
       });
       setConfig(saved);
+      // 组件卡片的「下载入口是否显示」来自后端算好的 onDemand 字段，
+      // 不跟着 config 一起变。不重查的话，开关保存后要有一次页面切换才生效。
+      reloadComponents();
       notify("设置已保存", "ok");
     });
     setSaving(false);
@@ -138,6 +174,7 @@ export function SettingsView({
         ["配置文件", paths?.configFile],
         ["ffprobe", report.ffprobeOk ? report.ffprobePath : "未找到（可选）"],
         ["scraper", report.scraperExeOk ? report.scraperExePath : "未找到"],
+        ["scraper 来源", report.scraperSource || "—"],
         ["播放器", report.playerPath || "系统默认"],
         [
           "Chrome",
@@ -296,6 +333,13 @@ export function SettingsView({
         )}
         {section === "scraper" && config && (
           <>
+            {components.map((component) => (
+              <ComponentCard
+                key={component.name}
+                component={component}
+                onChanged={reloadComponents}
+              />
+            ))}
             <Card>
               <CardHeader>
                 <CardTitle>刮削器配置</CardTitle>
@@ -309,6 +353,8 @@ export function SettingsView({
                       scraperPath: config.scraperPath.trim(),
                       concurrency: config.concurrency,
                       scrapeTimeoutMin: config.scrapeTimeoutMin,
+                      componentsOnDemand: config.componentsOnDemand,
+                      componentMirror: config.componentMirror.trim(),
                     });
                   }}
                 >
@@ -363,6 +409,37 @@ export function SettingsView({
                       update("scrapeTimeoutMin", event.target.valueAsNumber)
                     }
                   />
+                  <Label className="flex items-center gap-2">
+                    <Switch
+                      checked={config.componentsOnDemand}
+                      onCheckedChange={(value) =>
+                        update("componentsOnDemand", value === true)
+                      }
+                    />
+                    缺少时允许一键下载安装
+                  </Label>
+                  <p className="text-muted">
+                    关掉之后仍可使用已下载的组件与手动指定的路径，只是不再显示下载入口。
+                  </p>
+                  <Label htmlFor="component-mirror">
+                    组件下载源（留空直连 GitHub）
+                  </Label>
+                  <Input
+                    id="component-mirror"
+                    value={config.componentMirror}
+                    placeholder="https://ghproxy.example/"
+                    onChange={(event) =>
+                      update("componentMirror", event.target.value)
+                    }
+                  />
+                  <p className="text-muted">
+                    填镜像前缀即可加速下载，例如 <span className="mono">https://ghproxy.example/</span>
+                    ，程序会在其后再拼上完整的 GitHub 地址。必须是 https。
+                  </p>
+                  <p className="text-muted">
+                    注意：清单与组件包都会从该地址取，也就是说，能否安装由它决定。
+                    只填你信任的镜像。
+                  </p>
                   <Button type="submit" disabled={saving}>
                     保存刮削器设置
                   </Button>

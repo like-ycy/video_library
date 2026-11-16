@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
@@ -23,7 +22,6 @@ import (
 	"videolib/internal/player"
 	"videolib/internal/probe"
 	"videolib/internal/scraper"
-	"videolib/internal/toolpath"
 )
 
 // 推给前端的事件名。前端按这些名字订阅，属于对外契约的一部分。
@@ -66,13 +64,29 @@ type App struct {
 	prober *probe.Prober
 	runner *scraper.Runner
 
+	// components 管理按需下载的外部组件（刮削器、ffprobe）。
+	// 它自带锁与网络客户端，有意不参与 a.mu：清单刷新要等网络，
+	// 混进 a.mu 会让「打开设置页」这种操作卡住整个 App。
+	components *componentService
+
 	// stream 是本地视频流服务。Windows 上不能让大视频走 Wails AssetServer：
 	// WebView2 响应体整包进内存，一点播放就可能把进程打崩。
 	stream *media.StreamServer
 
+	// scrapeMu 同时保护 scraping / scrapeCancel 与 installs 三件事。
+	//
+	// 为什么共用一把锁：刮削与「装/卸组件」争的是同一样资源（组件目录里的
+	// 可执行文件），必须由同一个裁决点原子地完成「检查 + 占用」。分成两把
+	// 锁时，两边都能在对方占用之前通过自己的检查 —— 中间那段空隙足够长
+	// （开始刮削要先扫一遍整库），结果就是安装与刮削同时进行，同版本重装
+	// 会把正在用的运行时目录移走。
 	scrapeMu     sync.Mutex
 	scrapeCancel context.CancelFunc
 	scraping     bool
+	// installs 记录正在装/卸的组件，兼作「组件目录已被占用」的标记。
+	installs map[string]bool
+	// installProgress 记录安装进度，供页面重挂载时恢复显示。
+	installProgress map[string][2]int64
 
 	// doctor 结果缓存。单独一把锁：它在 a.mu 之外也可能被读（ScraperHealth
 	// 运行期间不会持有 a.mu），混进 a.mu 会让「查环境」这件事被长操作挡住。
@@ -97,10 +111,11 @@ func NewApp() (*App, error) {
 	}
 
 	app := &App{
-		cfg:     cfg,
-		stores:  make(map[string]*index.Store),
-		runner:  &scraper.Runner{Site: "javlibrary"},
-		logRing: make([]string, 0, logRingSize),
+		cfg:        cfg,
+		stores:     make(map[string]*index.Store),
+		runner:     &scraper.Runner{Site: "javlibrary"},
+		logRing:    make([]string, 0, logRingSize),
+		components: newComponentService(),
 	}
 	app.mu.Lock()
 	ffprobePath := app.resolveFFprobe()
@@ -114,6 +129,7 @@ func NewApp() (*App, error) {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.rebuildRunner()
+	a.cleanupComponents()
 
 	stream, err := media.StartStreamServer(a.ResolveLibraryRoot)
 	if err != nil {
@@ -156,7 +172,7 @@ func (a *App) rebuildRunner() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	a.runner.ExePath = a.resolveScraperPath()
+	a.runner.ExePath, _ = a.resolveScraperLocked()
 	a.runner.Concurrency = a.cfg.Concurrency
 	a.runner.IdleTimeout = time.Duration(a.cfg.ScrapeTimeoutMin) * time.Minute
 	// 工作目录必须可写：seleniumbase 会在 CWD 下建 downloaded_files/，
@@ -166,60 +182,6 @@ func (a *App) rebuildRunner() {
 	} else {
 		a.runner.WorkDir = os.TempDir()
 	}
-}
-
-// resolveScraperPath 定位刮削器可执行文件。
-//
-// 顺序：显式配置 → 标准位置（见 internal/toolpath）→ PATH。
-//
-// 两种布局都要认，且分发布局必须排在最前：
-//
-//	分发  <App>/tools/scraper/scraper.exe   ← tools/package.ps1 产出
-//	开发  <repo>/tools/bin/scraper/scraper.exe
-//
-// 只认开发布局是曾经的 bug：开发期仓库里恰好有 tools/bin/，一切正常，
-// 而 user 装好分发包后必然找不到刮削器，且报错完全指不到目录层级上。
-func (a *App) resolveScraperPath() string {
-	if a.cfg.ScraperPath != "" {
-		return a.cfg.ScraperPath
-	}
-
-	name := toolpath.Name("scraper")
-
-	// 分发布局优先于开发布局：正式分发物里不该出现 tools/bin/，
-	// 万一出现也说明那是残留，不该压过随包分发的正本。
-	for _, rel := range [][]string{
-		{"tools", "scraper", name},
-		{"tools", "bin", "scraper", name},
-	} {
-		if found := toolpath.Find(rel...); found != "" {
-			return found
-		}
-	}
-
-	if found, err := exec.LookPath(name); err == nil {
-		return found
-	}
-	return ""
-}
-
-// resolveFFprobe 按当前配置重新定位 ffprobe 并重建 Prober，返回所用路径。
-// 调用方必须持有 a.mu。
-//
-// 构造 Prober 只有这一处入口（启动、保存设置、环境诊断都走它）：
-// ffprobe 的实际路径是「配置 → 标准位置 → PATH」一次完整解析的结果，
-// 直接拿 cfg.FFprobePath 构造就是第二套状态源。设置页没有 ffprobe 输入框，
-// 这一项恒为空，于是用户每保存一次任意设置，PATH 里找到的那份就被丢掉，
-// 诊断显示「未找到」—— 而 scraper 每次都完整解析，同一个页面上两个工具
-// 的表现因此对不上。
-func (a *App) resolveFFprobe() string {
-	path := probe.Locate(a.cfg.FFprobePath)
-	// 路径没变就不重建：Prober 内含并发信号量，导入进行中被替换会让
-	// 新旧两个各带 4 个额度的信号量同时生效，瞬时并发翻倍。
-	if a.prober == nil || a.prober.Path() != path {
-		a.prober = probe.New(path, 4)
-	}
-	return path
 }
 
 // ── 媒体服务 ──────────────────────────────────────────────────────────────
@@ -654,6 +616,74 @@ func (a *App) RebuildIndex(libraryID string) (index.ImportStats, error) {
 	return a.ImportLibrary(libraryID)
 }
 
+// reserveScrape 原子地占用刮削权：要么拿到，要么说清为什么拿不到。
+//
+// 调用方必须在真正开跑之前调用它，并且失败路径要把占用还回去。
+func (a *App) reserveScrape() error {
+	a.scrapeMu.Lock()
+	defer a.scrapeMu.Unlock()
+	if len(a.installs) > 0 {
+		return errors.New("正在下载组件，完成之后再开始刮削")
+	}
+	if a.scraping {
+		return errors.New("已有刮削任务正在进行，请先取消或等待完成")
+	}
+	a.scraping = true
+	return nil
+}
+
+func (a *App) releaseScrape() {
+	a.scrapeMu.Lock()
+	cancel := a.scrapeCancel
+	a.scraping = false
+	a.scrapeCancel = nil
+	a.scrapeMu.Unlock()
+	// 取消函数必须调用，否则 ctx 会一直挂在父 ctx 上（vet 也会报泄漏）。
+	// 运行结束后来这一下是空操作，WithCancel 的 cancel 可以重复调用。
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// reserveComponentChange 原子地占用某个组件的「装/卸」权。
+//
+// action 只用于报错文案（「下载或更新」「卸载」），不参与判断。
+func (a *App) reserveComponentChange(name, action string) error {
+	a.scrapeMu.Lock()
+	defer a.scrapeMu.Unlock()
+	if a.scraping {
+		return fmt.Errorf("刮削进行中，结束之后再%s组件", action)
+	}
+	if a.installs == nil {
+		a.installs = map[string]bool{}
+	}
+	if a.installs[name] {
+		return fmt.Errorf("%s 正在处理中，请稍候", name)
+	}
+	a.installs[name] = true
+	if a.installProgress != nil {
+		delete(a.installProgress, name)
+	}
+	return nil
+}
+
+func (a *App) releaseComponentChange(name string) {
+	a.scrapeMu.Lock()
+	delete(a.installs, name)
+	delete(a.installProgress, name)
+	a.scrapeMu.Unlock()
+}
+
+// recordInstallProgress 记下安装进度，供页面重新挂载后恢复。
+func (a *App) recordInstallProgress(name string, done, total int64) {
+	a.scrapeMu.Lock()
+	if a.installProgress == nil {
+		a.installProgress = map[string][2]int64{}
+	}
+	a.installProgress[name] = [2]int64{done, total}
+	a.scrapeMu.Unlock()
+}
+
 // StartScrape 启动一次刮削。
 //
 // 立即返回，进度通过事件推送 —— 一次批量刮削可能持续几十分钟，
@@ -661,6 +691,10 @@ func (a *App) RebuildIndex(libraryID string) (index.ImportStats, error) {
 func (a *App) StartScrape(libraryID string, stems []string, force bool) error {
 	if len(stems) == 0 {
 		return errors.New("没有选中任何条目")
+	}
+	if a.scraperPath() == "" {
+		return errors.New(
+			"尚未安装刮削器。请到「设置 → 刮削器」下载安装后再试")
 	}
 	if !a.prober.Available() {
 		// 只提示，不阻断：没有 ffprobe 只影响时长展示。
@@ -676,21 +710,31 @@ func (a *App) StartScrape(libraryID string, stems []string, force bool) error {
 		return err
 	}
 
+	// 先抢占用再扫描。扫描一次整库要几秒，把占用放在扫描之后就会留下
+	// 「已通过检查、尚未占用」的窗口，组件恰好在窗口里被换掉。
+	if err := a.reserveScrape(); err != nil {
+		return err
+	}
+	// cancel 在扫描前就挂上：扫描期间用户点「取消」也要能取消，否则界面
+	// 已经显示「刮削中」，取消却回答「当前没有运行中的刮削」。
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.scrapeMu.Lock()
+	a.scrapeCancel = cancel
+	a.scrapeMu.Unlock()
+	reserved := true
+	// 任何提前返回都必须归还占用，否则刮削按钮会永久报「任务正在进行」。
+	defer func() {
+		if reserved {
+			a.releaseScrape()
+		}
+	}()
+
 	plan, err := a.planScrape(ref, stems, force)
 	if err != nil {
 		return err
 	}
 
-	a.scrapeMu.Lock()
-	if a.scraping {
-		a.scrapeMu.Unlock()
-		return errors.New("已有刮削任务正在进行，请先取消或等待完成")
-	}
-	ctx, cancel := context.WithCancel(a.ctx)
-	a.scrapeCancel = cancel
-	a.scraping = true
-	a.scrapeMu.Unlock()
-
+	reserved = false
 	go a.runScrape(ctx, store, plan)
 	return nil
 }
@@ -733,8 +777,8 @@ func (a *App) ScraperHealth(force bool) (scraper.Health, error) {
 	exePath := a.runner.ExePath
 	if exePath == "" {
 		return scraper.Health{}, errors.New(
-			"未找到刮削器组件。请先运行 tools/build.sh 完成打包，" +
-				"或在配置中指定 scraper_path")
+			"尚未安装刮削器。可在「设置 → 刮削器」点「下载安装」（约 20 MB），" +
+				"或手动指定 scraper 路径")
 	}
 	if !force {
 		if cached, ok := a.cachedHealth(exePath); ok {
@@ -880,12 +924,7 @@ func (a *App) logPlan(plan scrapePlan) {
 }
 
 func (a *App) runScrape(ctx context.Context, store *index.Store, plan scrapePlan) {
-	defer func() {
-		a.scrapeMu.Lock()
-		a.scraping = false
-		a.scrapeCancel = nil
-		a.scrapeMu.Unlock()
-	}()
+	defer a.releaseScrape()
 
 	a.rebuildRunner()
 

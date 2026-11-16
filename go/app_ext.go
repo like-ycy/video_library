@@ -10,6 +10,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"videolib/internal/appearance"
+	"videolib/internal/component"
 	"videolib/internal/config"
 	"videolib/internal/index"
 	"videolib/internal/scraper"
@@ -18,12 +19,14 @@ import (
 
 // ConfigDTO 是给前端的可编辑配置（不含 libraries，库单独管理）。
 type ConfigDTO struct {
-	Concurrency      int    `json:"concurrency"`
-	ScrapeTimeoutMin int    `json:"scrapeTimeoutMin"`
-	ScraperPath      string `json:"scraperPath"`
-	FFprobePath      string `json:"ffprobePath"`
-	PlayerPath       string `json:"playerPath"`
-	Theme            string `json:"theme"`
+	Concurrency        int    `json:"concurrency"`
+	ScrapeTimeoutMin   int    `json:"scrapeTimeoutMin"`
+	ScraperPath        string `json:"scraperPath"`
+	FFprobePath        string `json:"ffprobePath"`
+	PlayerPath         string `json:"playerPath"`
+	Theme              string `json:"theme"`
+	ComponentsOnDemand bool   `json:"componentsOnDemand"`
+	ComponentMirror    string `json:"componentMirror"`
 }
 
 // PathsDTO 展示配置与数据目录位置。
@@ -35,12 +38,14 @@ type PathsDTO struct {
 
 func (a *App) dtoFromConfig(cfg config.Config) ConfigDTO {
 	return ConfigDTO{
-		Concurrency:      cfg.Concurrency,
-		ScrapeTimeoutMin: cfg.ScrapeTimeoutMin,
-		ScraperPath:      cfg.ScraperPath,
-		FFprobePath:      cfg.FFprobePath,
-		PlayerPath:       cfg.PlayerPath,
-		Theme:            cfg.Theme,
+		Concurrency:        cfg.Concurrency,
+		ScrapeTimeoutMin:   cfg.ScrapeTimeoutMin,
+		ScraperPath:        cfg.ScraperPath,
+		FFprobePath:        cfg.FFprobePath,
+		PlayerPath:         cfg.PlayerPath,
+		Theme:              cfg.Theme,
+		ComponentsOnDemand: cfg.ComponentsOnDemand,
+		ComponentMirror:    cfg.ComponentMirror,
 	}
 }
 
@@ -53,6 +58,15 @@ func (a *App) GetConfig() ConfigDTO {
 
 // SaveConfig 保存可编辑配置字段（不触碰 libraries）。
 func (a *App) SaveConfig(dto ConfigDTO) (ConfigDTO, error) {
+	// 镜像前缀会拼进下载地址。协议不对时在这里拒绝，而不是等到用户点下载：
+	// 那时失败信息是「只支持 http(s)」，用户未必想到是自己填的这一栏。
+	mirror := strings.TrimSpace(dto.ComponentMirror)
+	if mirror != "" {
+		if err := component.ValidateURL(mirror); err != nil {
+			return ConfigDTO{}, fmt.Errorf("组件下载源不可用：%w", err)
+		}
+	}
+
 	a.mu.Lock()
 	if dto.Concurrency > 0 {
 		a.cfg.Concurrency = dto.Concurrency
@@ -63,6 +77,8 @@ func (a *App) SaveConfig(dto ConfigDTO) (ConfigDTO, error) {
 	a.cfg.ScraperPath = dto.ScraperPath
 	a.cfg.FFprobePath = dto.FFprobePath
 	a.cfg.PlayerPath = dto.PlayerPath
+	a.cfg.ComponentsOnDemand = dto.ComponentsOnDemand
+	a.cfg.ComponentMirror = mirror
 	switch dto.Theme {
 	case "system", "dark", "light":
 		a.cfg.Theme = dto.Theme
@@ -78,6 +94,8 @@ func (a *App) SaveConfig(dto ConfigDTO) (ConfigDTO, error) {
 	a.resolveFFprobe()
 	a.mu.Unlock()
 	a.rebuildRunner()
+	// 换路径/开关之后设置页显示的是旧结果，缓存必须失效。
+	a.invalidateHealth()
 
 	return a.dtoFromConfig(cfg), nil
 }
@@ -126,18 +144,21 @@ func (a *App) PickExecutable(title string) (string, error) {
 
 // EnvReport 是环境诊断结果。
 type EnvReport struct {
-	GoVersion      string          `json:"goVersion"`
-	Platform       string          `json:"platform"`
-	FFprobePath    string          `json:"ffprobePath"`
-	FFprobeOK      bool            `json:"ffprobeOk"`
-	ScraperExePath string          `json:"scraperExePath"`
-	ScraperExeOK   bool            `json:"scraperExeOk"`
-	ScraperHealth  *scraper.Health `json:"scraperHealth,omitempty"`
-	ScraperError   string          `json:"scraperError,omitempty"`
-	PlayerPath     string          `json:"playerPath"`
-	ConfigDir      string          `json:"configDir"`
-	CheckedAt      string          `json:"checkedAt"`
-	TempWritable   bool            `json:"tempWritable"`
+	GoVersion      string `json:"goVersion"`
+	Platform       string `json:"platform"`
+	FFprobePath    string `json:"ffprobePath"`
+	FFprobeOK      bool   `json:"ffprobeOk"`
+	ScraperExePath string `json:"scraperExePath"`
+	ScraperExeOK   bool   `json:"scraperExeOk"`
+	// ScraperSource 说明这份可执行文件是从哪来的（config/component/bundled/dev/path），
+	// 「装了却不生效」时这是第一个要看的信息。
+	ScraperSource string          `json:"scraperSource"`
+	ScraperHealth *scraper.Health `json:"scraperHealth,omitempty"`
+	ScraperError  string          `json:"scraperError,omitempty"`
+	PlayerPath    string          `json:"playerPath"`
+	ConfigDir     string          `json:"configDir"`
+	CheckedAt     string          `json:"checkedAt"`
+	TempWritable  bool            `json:"tempWritable"`
 }
 
 // DiagnoseEnv 运行环境自检。
@@ -145,13 +166,13 @@ type EnvReport struct {
 // force 透传给 ScraperHealth，语义一致：主动刷新跳过缓存。
 func (a *App) DiagnoseEnv(force bool) EnvReport {
 	report := EnvReport{
-		GoVersion:      goRuntime.Version(),
-		Platform:       goRuntime.GOOS + "/" + goRuntime.GOARCH,
-		CheckedAt:      time.Now().Format(time.RFC3339),
-		ScraperExePath: a.resolveScraperPath(),
-		PlayerPath:     a.playerPath(),
-		TempWritable:   true,
+		GoVersion:    goRuntime.Version(),
+		Platform:     goRuntime.GOOS + "/" + goRuntime.GOARCH,
+		CheckedAt:    time.Now().Format(time.RFC3339),
+		PlayerPath:   a.playerPath(),
+		TempWritable: true,
 	}
+	report.ScraperExePath, report.ScraperSource = a.scraperSource()
 	if dir, err := config.Dir(); err == nil {
 		report.ConfigDir = dir
 	}

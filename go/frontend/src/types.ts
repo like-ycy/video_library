@@ -40,6 +40,32 @@ export interface Config {
   ffprobePath: string;
   playerPath: string;
   theme: string;
+  /** 缺少刮削器时是否提供「下载安装」入口。 */
+  componentsOnDemand: boolean;
+  /** 组件下载镜像前缀，留空直连 GitHub。 */
+  componentMirror: string;
+}
+/** 一个按需下载组件的状态。state 取值见后端 component.State。 */
+export interface Component {
+  name: string;
+  label: string;
+  state: "missing" | "outdated" | "ready" | "corrupt" | "incompatible";
+  installedVersion: string;
+  availableVersion: string;
+  protocol: number;
+  size: number;
+  /** config/component/bundled/dev/path/auto，空表示没有可用文件。 */
+  source: string;
+  path: string;
+  canInstall: boolean;
+  onDemand: boolean;
+  optional: boolean;
+  /** 此刻是否有安装任务在跑；页面重挂载时靠它恢复按钮状态。 */
+  installing: boolean;
+  /** 最近一次进度快照，0/0 表示还在解析清单。 */
+  progressDone: number;
+  progressTotal: number;
+  message: string;
 }
 export interface Health {
   v: number;
@@ -88,6 +114,8 @@ export interface EnvReport {
   ffprobePath: string;
   scraperExeOk: boolean;
   scraperExePath: string;
+  /** config/component/bundled/dev/path，说明这份可执行文件从哪来。 */
+  scraperSource: string;
   playerPath: string;
   scraperHealth?: Health;
   scraperError?: string;
@@ -141,6 +169,9 @@ export interface Backend {
   ScrapeStatus(): Promise<boolean>;
   GetScrapeLog(): Promise<string[]>;
   ScraperHealth(force: boolean): Promise<Health>;
+  ListComponents(): Promise<Component[]>;
+  InstallComponent(name: string): Promise<void>;
+  RemoveComponent(name: string): Promise<void>;
   GetConfig(): Promise<Config>;
   SaveConfig(config: Config): Promise<Config>;
   Paths(): Promise<Paths>;
@@ -178,6 +209,11 @@ export interface Events {
   "index:progress": { done: number; total: number };
   "index:done": { actresses: number };
   "index:failed": { message: string };
+  "component:progress": { name: string; done: number; total: number };
+  "component:done": { name: string; version: string; path: string };
+  "component:failed": { name: string; message: string };
+  /** 清单在后台刷新完成，组件状态可能已变化。 */
+  "component:refreshed": Record<string, never>;
 }
 export interface Runtime {
   Environment(): Promise<{ platform: string }>;

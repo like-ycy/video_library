@@ -110,6 +110,15 @@ func (p *Prober) Probe(ctx context.Context, videoPath string) (MediaInfo, error)
 // 相对当前工作目录那一档予以保留：部分开发流程直接从仓库根启动进程。
 // 它排在可执行文件之后，因为由快捷方式启动的 App 工作目录并不是安装目录。
 func Locate(configured string) string {
+	return LocateWith(configured)
+}
+
+// LocateWith 同 Locate，另外优先尝试 preferred 里的路径。
+//
+// preferred 用于「按需下载的组件」：它装在用户数据目录里，不是随包目录，
+// 所以 toolpath 那套相对可执行文件向上探测的规则找不到它。让它排在显式配置
+// 之后、随包之前 —— 显式配置永远是最强意图，而组件是用户主动装的新版本。
+func LocateWith(configured string, preferred ...string) string {
 	if configured != "" {
 		if _, err := exec.LookPath(configured); err == nil {
 			return configured
@@ -117,6 +126,14 @@ func Locate(configured string) string {
 		// 配置过但已失效（卸载、换盘符、手输错）。报出来再走自动探测：
 		// 直接返回它，对外只会表现为「时长一直读不出来」，看不出跟配置项有关。
 		log.Printf("警告：配置的 ffprobe 路径 %s 不可用，转为自动探测", configured)
+	}
+	for _, candidate := range preferred {
+		if candidate == "" {
+			continue
+		}
+		if _, err := exec.LookPath(candidate); err == nil {
+			return candidate
+		}
 	}
 	name := toolpath.Name("ffprobe")
 

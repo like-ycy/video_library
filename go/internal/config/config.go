@@ -54,6 +54,19 @@ type Config struct {
 	FFprobePath      string       `json:"ffprobe_path"`
 	PlayerPath       string       `json:"player_path"`
 	Theme            string       `json:"theme"`
+
+	// ComponentsOnDemand 决定缺少刮削器时是否向用户提供「下载安装」入口。
+	//
+	// 只管入口，不管路径解析：装了组件就一定会被用上（顺序见 app.go 的
+	// resolveScraper），关掉这个开关不会让已装的组件失效 —— 否则用户在
+	// 设置里点一下开关，表现就是「刮削器突然找不到了」。
+	ComponentsOnDemand bool `json:"components_on_demand"`
+
+	// ComponentMirror 是组件下载的镜像前缀（形如 https://ghproxy.example/）。
+	//
+	// 有一批用户拿不到 GitHub 直连。没有这条，按需下载对他们等于功能不可用，
+	// 而整包又已经不再随 Release 默认提供 —— 那等于把人挡在门外。
+	ComponentMirror string `json:"component_mirror"`
 }
 
 // Defaults 返回带默认值的配置。
@@ -63,6 +76,10 @@ func Defaults() Config {
 		ScrapeTimeoutMin: 30,
 		// 未设置时跟随系统；手动 dark/light 由用户显式写入。
 		Theme: "system",
+		// 默认开启：发布包默认不含刮削器（见 docs/size-reduction-plan.md），
+		// 关掉它等于让「下载即用」的用户没有可走的路。整包用户不受影响 ——
+		// 随包副本仍在解析顺序里。
+		ComponentsOnDemand: true,
 	}
 }
 
@@ -183,6 +200,11 @@ func (c *Config) Normalize() {
 	default:
 		c.Theme = Defaults().Theme
 	}
+
+	// 镜像前缀按「前缀」语义使用（`<mirror>/<完整地址>`）。这里只做去空白，
+	// 不猜用户想写什么；协议不对时由 component.Spec.Validate 明确指出，
+	// 而不是在这里静默清空 —— 那会表现成「填了镜像却仍直连」。
+	c.ComponentMirror = strings.TrimSpace(c.ComponentMirror)
 
 	seen := make(map[string]bool, len(c.Libraries))
 	kept := c.Libraries[:0]
