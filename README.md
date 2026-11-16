@@ -19,6 +19,24 @@
 - **Go 是唯一的编排者与数据所有者。** 文件布局、元数据 schema、索引、供流全归 Go。
 - **文件系统是唯一真相来源**，SQLite 只是可随时重建的索引。
 
+## 下载与安装
+
+Release 上有两套 App 包，按需要挑一个：
+
+| 下载项 | 体积 | 适用 |
+|---|---|---|
+| `VideoLib_<ver>_<os>_<arch>.zip` / `.tar.gz` | ~10 MB | 默认。第一次刮削时 App 自己下载刮削器（约 20 MB，只下一次） |
+| `VideoLib_<ver>_full_<os>_<arch>.zip` / `.tar.gz` | ~30 MB | 拿不到 GitHub 直连，或要把整个目录拷到无网机器 |
+
+解压后直接运行，不需要安装。刮削器缺失时的行为：
+
+- 浏览、播放完全不受影响（这两条路径不碰刮削器）
+- 点「开始刮削」时，刮削页顶部会出现「下载安装」按钮，点一下即装好并生效
+- 下载源可在 设置 → 刮削器 → 组件下载源 换成镜像前缀（形如 `https://ghproxy.example/`）
+- 也可以手动指定自己编译的刮削器：设置 → 刮削器 → scraper 路径
+
+产物细节与 CI 流程见 [`docs/release-workflow.md`](docs/release-workflow.md)。
+
 ## 环境要求
 
 | 组件 | 版本 | 说明 |
@@ -64,6 +82,9 @@ tools/build.sh --go
 
 产物在 `dist/VideoLib/`：`VideoLib.app` + `tools/scraper/`，可直接打开测试。
 
+本地刻意打的是**整包**（含刮削器），改完代码就能直接刮一刀。想验证轻量包
+形态用 `tools/package.sh`（不带参数即轻量），CI 发的默认就是它。
+
 组装逻辑在 `tools/package.sh`（macOS）/ `tools/package.ps1`（Windows），
 与 CI 共用同一路径。
 
@@ -93,6 +114,10 @@ go mod tidy
 wails dev          # 开发
 wails build        # 打包
 ```
+
+> 测试文件按 `.gitignore` 约定不入库（`**/*_test.go`、`python/tests/`）。
+> 从仓库克隆下来跑 `go test ./...` 会显示「no test files」，属预期结果 ——
+> 测试只存在于开发者本地。
 
 ## 关于 Cloudflare 认证代码
 

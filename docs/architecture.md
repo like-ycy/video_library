@@ -187,7 +187,7 @@ type Config struct {
     Libraries   []LibraryRef `json:"libraries"`     // 可配置多个视频库根
     Concurrency int          `json:"concurrency"`   // 刮削并发，默认 2
     ScrapeTimeoutMin int     `json:"scrape_timeout_min"`
-    ScraperPath string       `json:"scraper_path"`  // 空则自动探测 tools/scraper/scraper.exe
+    ScraperPath string       `json:"scraper_path"`  // 空则按 components → tools/scraper → tools/bin → PATH 探测
     FFprobePath string       `json:"ffprobe_path"`
     PlayerPath  string       `json:"player_path"`   // 外部播放器，空则走系统默认关联
     Theme       string       `json:"theme"`    // system | dark | light，未设置默认 system（跟随系统）
@@ -1178,14 +1178,15 @@ wails build -platform windows/amd64 -webview2 download -clean
 
 ### 9.3 最终 Release 资产
 
-```
-Release v1.2.3/
-├── video-library.exe                  # Go + Wails（含前端资源）
-└── scraper.exe                        # Python 刮削器
-```
+产物形态已从「两个独立 exe」演进为「轻量包 + 整包 + 按需组件」，权威描述见
+[release-workflow.md](release-workflow.md) §2，这里只留不变量：
 
-Release 上传两个独立文件。用户将它们放在同一目录，App 支持自动发现 scraper.exe，
-也支持在设置页手动选择路径。ffprobe 作为 App 配套运行时文件处理，不改变两个主资产的命名。
+| 不变量 | 说明 |
+|---|---|
+| App 启动不依赖刮削器 | 启动时只解析路径，不探测、不启动 Python。缺失只影响「开始刮削」这一个动作 |
+| 刮削器可单独更新 | 走 `internal/component` 的组件目录（`<data>/components/scraper-<ver>/`），不必重发 App |
+| 目录结构是契约 | 随包位置 `<App>/tools/scraper/`，`go/internal/toolpath` 与打包脚本必须同时改 |
+| 两条路并存 | 轻量包（按需下载）与整包（随包分发）都在 Release 上，手工指定路径仍然有效 |
 
 **为什么不把 scraper embed 进 Go 二进制**
 
@@ -1193,9 +1194,8 @@ Release 上传两个独立文件。用户将它们放在同一目录，App 支�
 |---|---|
 | `//go:embed` 打进 exe | ❌ Go 二进制膨胀几十 MB；首次运行仍要解压到 temp，onefile 的问题原样复现；调试痛苦 |
 | 同级目录分发 | ✅ 简单、可单独更新、可单独排障 |
+| 按需下载到用户数据目录 | ✅ 默认包最小；代价是首次刮削多一步下载，且依赖网络可达（已提供镜像与整包兜底） |
 
-**但必须做到「App 启动不依赖 Python」**：
-App 启动时**不要**检查 scraper 是否存在。
 只有用户进入刮削模块并点「开始刮削」时，才通过 `doctor` 检测并给出明确引导。
 
 ### 9.4 环境自检与版本协商
