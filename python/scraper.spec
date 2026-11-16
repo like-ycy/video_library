@@ -20,9 +20,31 @@ onefile 每次启动都把载荷解压到一个新的临时目录。seleniumbase
 ----
 Chrome 浏览器本身无法打包，目标机必须已安装。这一点由 `scraper doctor` 在
 用户点「开始刮削」之前探测并给出引导，见 docs/architecture.md §9.4。
+
+体积：三处收紧，都是有实测依据的（详见 docs/size-reduction-plan.md）
+-------------------------------------------------------------------
+① 剔除 selenium-manager 的三份二进制（macOS/Linux/Windows 各一份，合计约
+   12.4MB）。**seleniumbase 不会调用 Selenium Manager**：它在
+   `seleniumbase/core/browser_launcher.py:2073` 用
+   `ChromeService(executable_path=LOCAL_CHROMEDRIVER)` 显式给出驱动路径，
+   `driver_finder` 那条会落到 Selenium Manager 的分支根本不进入。
+   注意这些文件在两个地方各有一份 —— `a.binaries`（macOS 那份）与 `a.datas`
+   （Linux/Windows 那两份），只清一处会省下不到三分之一，很容易误判成
+   「已经清干净了」。
+
+② `optimize=2`：去掉 docstring 与 assert。seleniumbase 全包 `assert` 数为 0，
+   core/fixtures 也从不读 `__doc__`，所以这一档对它没有语义影响。
+   exe 从 13.0MB 降到 11.5MB。**若线上出现异常行为，这是第一个该回退的开关。**
+
+③ 明确不做：`strip`（实测 `strip -S` 对 macOS 的 libpython3.14.dylib 一分不减，
+   17.7MB 是 CPython 本身，且会破坏 ad-hoc 签名）、UPX（杀软误判）、
+   收窄 `hiddenimports`（seleniumbase 大量动态导入，收益不足 1MB，风险不成比例）。
 """
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+# 字节码优化档位。0=默认，1=去 assert，2=再去 docstring。
+_OPTIMIZE = 2
 
 # seleniumbase 的配置与资源是运行时按路径查找的，必须整体带上。
 datas = collect_data_files("seleniumbase")
@@ -62,7 +84,29 @@ a = Analysis(  # noqa: F821
     # seleniumbase 的部分功能会可选地用到它们，误删会让验证码流程在运行时才炸。
     excludes=["tkinter"],
     noarchive=False,
+    optimize=_OPTIMIZE,
 )
+
+# ── 剔除 selenium-manager 的三份二进制 ────────────────────────────────────
+# 理由见文件顶部 ①。为什么必须同时过滤 binaries 与 datas：selenium 的 wheel 里
+# 三个平台的文件由不同的 hook 收集 —— 当前平台那份进 binaries，其余两份进
+# datas。只过滤 binaries 时产物从 45MB 降到 41MB，看起来有效，实际还剩两份。
+_MANAGER_MARKERS = ("selenium/webdriver/common/", "selenium-manager")
+
+
+def _drop_selenium_manager(entries):
+    kept = []
+    for entry in entries:
+        dest = entry[0].replace("\\", "/")
+        if all(marker in dest for marker in _MANAGER_MARKERS):
+            print(f"[scraper.spec] 剔除 {dest}")
+            continue
+        kept.append(entry)
+    return kept
+
+
+a.binaries = _drop_selenium_manager(a.binaries)
+a.datas = _drop_selenium_manager(a.datas)
 
 pyz = PYZ(a.pure)  # noqa: F821
 

@@ -114,7 +114,10 @@ echo "产物在 $repo/go/build/bin/"
 step=$((step + 1))
 echo
 echo "==> [$step/$step_total] 组装分发目录"
-"$repo/tools/package.sh"
+# 本地刻意组装整包（含 tools/scraper）：开发时改完代码要能直接刮一刀，
+# 不该每次都先走一遍「下载 20MB 组件」。发布用的轻量包由 CI 组装。
+# 想验证轻量包形态：tools/package.sh（不带参数即轻量）。
+"$repo/tools/package.sh" --full
 
 echo
 if ((build_python)); then
