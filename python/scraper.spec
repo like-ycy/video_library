@@ -41,7 +41,19 @@ Chrome 浏览器本身无法打包，目标机必须已安装。这一点由 `sc
    收窄 `hiddenimports`（seleniumbase 大量动态导入，收益不足 1MB，风险不成比例）。
 """
 
+import sys
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+# 控制台编码兜底：Windows 上 sys.stdout 默认是 cp1252/charmap，下面那几行
+# 带中文的进度打印会直接抛 UnicodeEncodeError 把构建打断（实测 cp1252 编不了
+# “剔除”两个字）。这是构建脚本，跑完比日志好看重要，所以统一改成 UTF-8 并
+# 用 replace 兜底 —— 编码问题不该由打包环节来发现。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):  # 老 Python 或已被重定向的流
+    pass
 
 # 字节码优化档位。0=默认，1=去 assert，2=再去 docstring。
 _OPTIMIZE = 2

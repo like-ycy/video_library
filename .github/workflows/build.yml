@@ -126,6 +126,14 @@ jobs:
 
       - name: 打包刮削器（PyInstaller onedir）
         working-directory: python
+        # spec 里会打印被剔除的 selenium-manager 条目（带中文）。Windows runner
+        # 默认 cp1252 编不了中文，直接抛 UnicodeEncodeError —— 实测过一次：
+        # Analysis 跑完、EXE 之前炸掉，看起来像打包失败其实是编码问题。
+        # spec 自身已 reconfigure stdout，这里再兜一层，让 PyInstaller 自己的
+        # 输出与子进程同样是 UTF-8。
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
         run: uv run pyinstaller scraper.spec --noconfirm
 
       # 自检放在打包之后、组装之前：这一步能提前暴露「seleniumbase 资源没被
@@ -420,6 +428,14 @@ jobs:
 
       - name: 打包刮削器（PyInstaller onedir）
         working-directory: python
+        # spec 里会打印被剔除的 selenium-manager 条目（带中文）。Windows runner
+        # 默认 cp1252 编不了中文，直接抛 UnicodeEncodeError —— 实测过一次：
+        # Analysis 跑完、EXE 之前炸掉，看起来像打包失败其实是编码问题。
+        # spec 自身已 reconfigure stdout，这里再兜一层，让 PyInstaller 自己的
+        # 输出与子进程同样是 UTF-8。
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
         run: uv run pyinstaller scraper.spec --noconfirm
 
       - name: 冻结产物自检
