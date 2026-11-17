@@ -20,6 +20,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"videolib/internal/scraper"
 )
 
 const (
@@ -67,6 +69,16 @@ type Config struct {
 	// 有一批用户拿不到 GitHub 直连。没有这条，按需下载对他们等于功能不可用，
 	// 而整包又已经不再随 Release 默认提供 —— 那等于把人挡在门外。
 	ComponentMirror string `json:"component_mirror"`
+
+	// SiteOrder 是优先使用的刮削站点（取值见 scraper.SiteOptions）。
+	//
+	// 存的是「先试谁」而不是完整的站点链：链本身由 scraper.Chain 拼。让用户
+	// 在配置文件里手写 "a,b" 没有任何好处，少一个逗号就是整批任务失败。
+	SiteOrder string `json:"site_order"`
+
+	// SiteFallback 决定优先站点失败（未收录／被拦下）时是否换另一个站点再试。
+	// 关掉它就等于「只用某一个站点」。
+	SiteFallback bool `json:"site_fallback"`
 }
 
 // Defaults 返回带默认值的配置。
@@ -80,6 +92,10 @@ func Defaults() Config {
 		// 关掉它等于让「下载即用」的用户没有可走的路。整包用户不受影响 ——
 		// 随包副本仍在解析顺序里。
 		ComponentsOnDemand: true,
+		// 默认沿用原来的链：javlibrary 收录最全但常被 Cloudflare 拦，
+		// javranking 能接住。想「只用某一个」就关掉回退。
+		SiteOrder:    scraper.DefaultSiteOrder,
+		SiteFallback: true,
 	}
 }
 
@@ -205,6 +221,14 @@ func (c *Config) Normalize() {
 	// 不猜用户想写什么；协议不对时由 component.Spec.Validate 明确指出，
 	// 而不是在这里静默清空 —— 那会表现成「填了镜像却仍直连」。
 	c.ComponentMirror = strings.TrimSpace(c.ComponentMirror)
+
+	// 站点名传给 Python 时必须精确匹配，但手写配置时顺手写了大写不该让整批
+	// 任务失败：先统一小写再校验。不认识的站点退回默认优先级，而不是留着让
+	// Python 在第一条 job 上抛出「未知站点」—— 那条报错看不出是配置的问题。
+	c.SiteOrder = strings.ToLower(strings.TrimSpace(c.SiteOrder))
+	if !scraper.IsKnownSite(c.SiteOrder) {
+		c.SiteOrder = Defaults().SiteOrder
+	}
 
 	seen := make(map[string]bool, len(c.Libraries))
 	kept := c.Libraries[:0]

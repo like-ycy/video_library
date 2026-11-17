@@ -44,6 +44,10 @@ export interface Config {
   componentsOnDemand: boolean;
   /** 组件下载镜像前缀，留空直连 GitHub。 */
   componentMirror: string;
+  /** 优先使用的刮削站点（javlibrary | javranking），站点链由后端拼。 */
+  siteOrder: string;
+  /** 优先站点失败时是否换另一个站点；关掉即「只用某一个」。 */
+  siteFallback: boolean;
 }
 /** 一个按需下载组件的状态。state 取值见后端 component.State。 */
 export interface Component {
@@ -169,6 +173,8 @@ export interface Backend {
   ScrapeStatus(): Promise<boolean>;
   GetScrapeLog(): Promise<string[]>;
   ScraperHealth(force: boolean): Promise<Health>;
+  /** 当前站点链是否需要 Chrome。仅含 javranking 时没装浏览器也能刮。 */
+  ScrapeNeedsBrowser(): Promise<boolean>;
   ListComponents(): Promise<Component[]>;
   InstallComponent(name: string): Promise<void>;
   RemoveComponent(name: string): Promise<void>;

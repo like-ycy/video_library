@@ -140,8 +140,15 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     if (!stems.length) throw new Error("请先选择条目");
     starting.current = true;
     try {
-      const health = await call("ScraperHealth", true);
-      if (!health.chrome.found) throw new Error("未找到 Chrome，请先安装");
+      // 站点可配之后，「必须先装 Chrome」不再是硬结论：只用 javranking 时
+      // 刮削全程走 HTTP，没浏览器也能跑。问后端这条链要不要浏览器，别拿一个
+      // 与此无关的依赖把用户挡在门外。
+      const [health, needsBrowser] = await Promise.all([
+        call("ScraperHealth", true),
+        call("ScrapeNeedsBrowser"),
+      ]);
+      if (needsBrowser && !health.chrome.found)
+        throw new Error("未找到 Chrome，请先安装（当前站点需要浏览器）");
       dispatch({ type: "start", libraryId: id, total: stems.length });
       await call("StartScrape", id, stems, force);
       notify(`已开始刮削 ${stems.length} 条`);

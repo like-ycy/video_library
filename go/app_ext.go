@@ -27,6 +27,10 @@ type ConfigDTO struct {
 	Theme              string `json:"theme"`
 	ComponentsOnDemand bool   `json:"componentsOnDemand"`
 	ComponentMirror    string `json:"componentMirror"`
+	// SiteOrder 是优先站点，SiteFallback 决定失败时是否换另一个站点。
+	// 前端只认这两个字段，站点链由后端拼 —— 见 scraper.Chain。
+	SiteOrder    string `json:"siteOrder"`
+	SiteFallback bool   `json:"siteFallback"`
 }
 
 // PathsDTO 展示配置与数据目录位置。
@@ -46,6 +50,8 @@ func (a *App) dtoFromConfig(cfg config.Config) ConfigDTO {
 		Theme:              cfg.Theme,
 		ComponentsOnDemand: cfg.ComponentsOnDemand,
 		ComponentMirror:    cfg.ComponentMirror,
+		SiteOrder:          cfg.SiteOrder,
+		SiteFallback:       cfg.SiteFallback,
 	}
 }
 
@@ -67,6 +73,16 @@ func (a *App) SaveConfig(dto ConfigDTO) (ConfigDTO, error) {
 		}
 	}
 
+	// 站点名同样在入口处拒绝：不认识的站点传给 Python 只会得到一条「未知站点」
+	// 的致命错误，而那时用户已经按下了开始刮削。空值表示「回到默认」。
+	order := strings.ToLower(strings.TrimSpace(dto.SiteOrder))
+	if order == "" {
+		order = scraper.DefaultSiteOrder
+	}
+	if !scraper.IsKnownSite(order) {
+		return ConfigDTO{}, fmt.Errorf("未知站点：%s（可选：%s）", dto.SiteOrder, scraper.SiteNames())
+	}
+
 	a.mu.Lock()
 	if dto.Concurrency > 0 {
 		a.cfg.Concurrency = dto.Concurrency
@@ -79,6 +95,8 @@ func (a *App) SaveConfig(dto ConfigDTO) (ConfigDTO, error) {
 	a.cfg.PlayerPath = dto.PlayerPath
 	a.cfg.ComponentsOnDemand = dto.ComponentsOnDemand
 	a.cfg.ComponentMirror = mirror
+	a.cfg.SiteOrder = order
+	a.cfg.SiteFallback = dto.SiteFallback
 	switch dto.Theme {
 	case "system", "dark", "light":
 		a.cfg.Theme = dto.Theme
@@ -98,6 +116,18 @@ func (a *App) SaveConfig(dto ConfigDTO) (ConfigDTO, error) {
 	a.invalidateHealth()
 
 	return a.dtoFromConfig(cfg), nil
+}
+
+// ScrapeNeedsBrowser 报告当前站点链是否必须有 Chrome。
+//
+// 前端在开始刮削前会查一次硬件环境并要求装 Chrome。那条检查原本是硬编码的
+// 结论，现在站点可选，它必须先问清楚「这条链到底要不要浏览器」—— 只用
+// javranking 的用户没装 Chrome 也应该能刮。
+func (a *App) ScrapeNeedsBrowser() bool {
+	a.mu.Lock()
+	cfg := a.cfg
+	a.mu.Unlock()
+	return scraper.ChainNeedsBrowser(scraper.Chain(cfg.SiteOrder, cfg.SiteFallback))
 }
 
 // GetAppVersion 返回当前软件版本号。

@@ -35,6 +35,9 @@ export function ScrapeView({
   const [onlyUnscraped, setOnlyUnscraped] = useState(true);
   const [force, setForce] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
+  // 这条站点链是否需要 Chrome。默认 true（保守）：设置还没读到之前，
+  // 不要抢先告诉用户「没有 Chrome 也能刮」。
+  const [needsBrowser, setNeedsBrowser] = useState(true);
   // 组件状态决定要不要在顶部给出「还差一步下载」的提示。
   const [scraper, setScraper] = useState<Component | null>(null);
   const [healthError, setHealthError] = useState("");
@@ -82,6 +85,11 @@ export function ScrapeView({
           setHealthError(String(error));
         }
       });
+    call("ScrapeNeedsBrowser")
+      .then((value) => {
+        if (active) setNeedsBrowser(value);
+      })
+      .catch(() => undefined);
     return () => {
       active = false;
     };
@@ -216,10 +224,13 @@ export function ScrapeView({
               <Badge variant="danger" title={healthError}>
                 刮削器不可用：{healthError}
               </Badge>
-            ) : health && !health.chrome.found ? (
+            ) : health && needsBrowser && !health.chrome.found ? (
               <Badge variant="danger">缺少 Chrome</Badge>
             ) : (
+              // 驱动只在浏览器站点上用得到：只用 javranking 时这条链全程走
+              // HTTP，把「驱动待下载」挂在这里等于让用户去修一个用不上的东西。
               health &&
+              needsBrowser &&
               !health.driver.ready && (
                 <Badge
                   variant={health.driver.writable ? "warning" : "danger"}

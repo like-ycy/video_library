@@ -37,6 +37,21 @@ const TITLES: Record<string, string> = {
   appearance: "外观与配置文件",
   about: "关于与更新",
 };
+
+// 与后端 scraper.SiteOptions 对齐的展示信息。这里的 name 是 Python `--site`
+// 的取值，写错就是整批任务失败，所以前端只负责展示与回传，合法性由后端校验。
+const SITE_OPTIONS: { name: string; label: string; note: string }[] = [
+  {
+    name: "javlibrary",
+    label: "JavLibrary",
+    note: "收录最全，但每条 job 都要过 Cloudflare 验证。",
+  },
+  {
+    name: "javranking",
+    label: "JavRanking",
+    note: "无反爬、直接读索引，速度快但收录较少。",
+  },
+];
 export function SettingsView({
   section,
   libraries,
@@ -166,6 +181,19 @@ export function SettingsView({
     });
     setSaving(false);
   }
+  // 当前优先站点与「另一个」站点：回退开关的说明要指名道姓，
+  // 只说「另一个站点」用户还得自己推。
+  const activeSite =
+    SITE_OPTIONS.find((option) => option.name === config?.siteOrder) ??
+    SITE_OPTIONS[0];
+  const fallbackSite =
+    SITE_OPTIONS.find((option) => option.name !== activeSite.name) ??
+    SITE_OPTIONS[1];
+  // 设置页把「最终会传给 Python 的那串值」直接写出来：出问题时日志里的
+  // `--site` 与这里逐字一致，不用再反推设置被读成了什么。
+  const siteChain = config?.siteFallback
+    ? `${activeSite.name},${fallbackSite.name}`
+    : activeSite.name;
   const envRows = report
     ? [
         ["平台", report.platform],
@@ -355,6 +383,8 @@ export function SettingsView({
                       scrapeTimeoutMin: config.scrapeTimeoutMin,
                       componentsOnDemand: config.componentsOnDemand,
                       componentMirror: config.componentMirror.trim(),
+                      siteOrder: config.siteOrder,
+                      siteFallback: config.siteFallback,
                     });
                   }}
                 >
@@ -409,6 +439,43 @@ export function SettingsView({
                       update("scrapeTimeoutMin", event.target.valueAsNumber)
                     }
                   />
+                  <Label>优先站点</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {SITE_OPTIONS.map((option) => (
+                      <Button
+                        key={option.name}
+                        type="button"
+                        disabled={saving}
+                        variant={
+                          config.siteOrder === option.name
+                            ? "default"
+                            : "secondary"
+                        }
+                        onClick={() => update("siteOrder", option.name)}
+                      >
+                        {option.label}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-muted">
+                    {activeSite.note}
+                    {config.siteFallback
+                      ? `未收录或被拦下时，自动改试 ${fallbackSite.label}。`
+                      : `只使用 ${activeSite.label}，不会尝试 ${fallbackSite.label}。`}
+                  </p>
+                  <Label className="flex items-center gap-2">
+                    <Switch
+                      checked={config.siteFallback}
+                      onCheckedChange={(value) =>
+                        update("siteFallback", value === true)
+                      }
+                    />
+                    失败时回退到另一个站点
+                  </Label>
+                  <p className="text-muted">
+                    关掉就只用当前站点。实际传给刮削器的站点链：
+                    <span className="mono ml-1">{siteChain}</span>
+                  </p>
                   <Label className="flex items-center gap-2">
                     <Switch
                       checked={config.componentsOnDemand}

@@ -113,7 +113,7 @@ func NewApp() (*App, error) {
 	app := &App{
 		cfg:        cfg,
 		stores:     make(map[string]*index.Store),
-		runner:     &scraper.Runner{Site: scraper.DefaultSite},
+		runner:     &scraper.Runner{Site: scraper.Chain(cfg.SiteOrder, cfg.SiteFallback)},
 		logRing:    make([]string, 0, logRingSize),
 		components: newComponentService(),
 	}
@@ -174,6 +174,8 @@ func (a *App) rebuildRunner() {
 
 	a.runner.ExePath, _ = a.resolveScraperLocked()
 	a.runner.Concurrency = a.cfg.Concurrency
+	// 站点链每次重建都按配置重算：设置页改完不重启也该生效。
+	a.runner.Site = scraper.Chain(a.cfg.SiteOrder, a.cfg.SiteFallback)
 	a.runner.IdleTimeout = time.Duration(a.cfg.ScrapeTimeoutMin) * time.Minute
 	// 工作目录必须可写：seleniumbase 会在 CWD 下建 downloaded_files/，
 	// 而 macOS .app 启动时 CWD 通常是只读的 /。

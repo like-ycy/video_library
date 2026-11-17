@@ -192,6 +192,8 @@ type Config struct {
     FFprobePath string       `json:"ffprobe_path"`
     PlayerPath  string       `json:"player_path"`   // 外部播放器，空则走系统默认关联
     Theme       string       `json:"theme"`    // system | dark | light，未设置默认 system（跟随系统）
+    SiteOrder   string       `json:"site_order"`     // 优先站点：javlibrary（默认）| javranking
+    SiteFallback bool        `json:"site_fallback"`  // 优先站点失败时是否换另一个站；关掉即「只用某一个」
 }
 
 type LibraryRef struct {
@@ -688,7 +690,7 @@ Go                                     Python
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `--site` | string | `javlibrary,javranking` | 站点链，逗号分隔，按顺序回退 |
+| `--site` | string | `javlibrary,javranking` | 站点链，逗号分隔，按顺序回退。默认值由设置页的「优先站点 + 是否回退」决定（`scraper.Chain`） |
 | `--concurrency` | int | 2 | 同时处理的 job 数（1–8） |
 | `--timeout` | int | 60 | 单页面加载超时（秒） |
 | `--retries` | int | 2 | 单项失败重试次数 |

@@ -3,7 +3,8 @@
 cli.py 通过名字取站点实现，不认识任何具体站点。
 
 `--site` 接受逗号分隔的**站点链**，按书写顺序逐个尝试，前一个失败（且失败
-原因不是「不可回退」）就换下一个。默认链在 Go 侧拼：`javlibrary,javranking`。
+原因不是「不可回退」）就换下一个。链由 Go 侧按设置页的「优先站点 + 是否回退」
+拼出（见 `internal/scraper/sites.go` 的 Chain），默认 `javlibrary,javranking`。
 """
 
 from __future__ import annotations
