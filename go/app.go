@@ -113,7 +113,7 @@ func NewApp() (*App, error) {
 	app := &App{
 		cfg:        cfg,
 		stores:     make(map[string]*index.Store),
-		runner:     &scraper.Runner{Site: "javlibrary"},
+		runner:     &scraper.Runner{Site: scraper.DefaultSite},
 		logRing:    make([]string, 0, logRingSize),
 		components: newComponentService(),
 	}

@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# 默认封面名。站点可以覆盖（`Site.cover_name`）：javranking 只提供 WebP，
+# 文件名必须跟着字节格式走，否则 Go 侧的 ServeContent 会按扩展名声明一个
+# 与实际内容不符的 Content-Type。
 COVER_NAME = "cover.jpg"
 IMAGES_DIR = "images"
 
@@ -20,8 +23,8 @@ def prepare(out: Path) -> None:
     (out / IMAGES_DIR).mkdir(parents=True, exist_ok=True)
 
 
-def cover_path(out: Path) -> Path:
-    return out / COVER_NAME
+def cover_path(out: Path, name: str = COVER_NAME) -> Path:
+    return out / name
 
 
 def shot_path(out: Path, index: int) -> Path:

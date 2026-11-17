@@ -15,7 +15,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
 from ..models import VideoMeta
-from .base import Site
+from .base import BrowserSite
 
 SITE = "https://www.javlibrary.com"
 SEARCH_URL = f"{SITE}/cn/vl_searchbyid.php?keyword="
@@ -45,7 +45,7 @@ def _absolute(src: str) -> str:
     return urljoin(SITE, src)
 
 
-class JavLibrarySite(Site):
+class JavLibrarySite(BrowserSite):
     name = "javlibrary"
 
     def search_url(self, fanha: str) -> str:

@@ -35,8 +35,8 @@ from . import __version__, driver_dir, env_check, layout, protocol
 from .browser import fetch_html, open_session
 from .downloader import ImageDownloader
 from .models import ScrapeResult, Target, VideoMeta
-from .sites import get_site
-from .sites.base import Site
+from .sites import get_sites
+from .sites.base import BrowserSite, HttpSite, Site, SiteUnavailable
 
 log = logging.getLogger("scraper")
 
@@ -82,7 +82,7 @@ class _Outcome:
 
 def cmd_scrape(args: argparse.Namespace) -> int:
     try:
-        site = get_site(args.site)
+        sites = get_sites(args.site)
     except ValueError as exc:
         log.error("%s", exc)
         return EXIT_USAGE
@@ -105,7 +105,9 @@ def cmd_scrape(args: argparse.Namespace) -> int:
         return EXIT_OK
 
     health = env_check.check()
-    if not health.chrome.found:
+    # 只有链上有浏览器站点时才需要 Chrome。新版站点（javranking）走纯 HTTP，
+    # 显式要求 --site javranking 时不该因为没装 Chrome 而整体拒绝运行。
+    if any(site.requires_browser for site in sites) and not health.chrome.found:
         protocol.fatal("chrome_missing", health.chrome.hint())
         return EXIT_ENV
 
@@ -114,7 +116,10 @@ def cmd_scrape(args: argparse.Namespace) -> int:
 
     counters = {"ok": 0, "failed": 0, "skipped": 0}
     log.info(
-        "开始刮削 %d 条，站点=%s，并发=%d", len(targets), site.name, args.concurrency
+        "开始刮削 %d 条，站点链=%s，并发=%d",
+        len(targets),
+        " → ".join(site.name for site in sites),
+        args.concurrency,
     )
     _log_encodings()
 
@@ -123,7 +128,7 @@ def cmd_scrape(args: argparse.Namespace) -> int:
         workers = max(1, min(args.concurrency, len(targets)))
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = [
-                pool.submit(_scrape_one, target, site, downloader, cancel)
+                pool.submit(_scrape_one, target, sites, downloader, client, cancel)
                 for target in targets
             ]
             for future in as_completed(futures):
@@ -218,8 +223,9 @@ def _install_signal_handlers(cancel: threading.Event) -> None:
 
 def _scrape_one(
     target: Target,
-    site: Site,
+    sites: list[Site],
     downloader: ImageDownloader,
+    client: httpx.Client,
     cancel: threading.Event,
 ) -> _Outcome:
     if cancel.is_set():
@@ -229,9 +235,53 @@ def _scrape_one(
     # 要回答的第一个问题永远是「它到底往哪写」—— 以前这份日志里根本没有答案。
     log.info("%s 开始刮削，输出目录：%s", _tag(target), target.out)
 
+    meta: VideoMeta | None = None
+    used: Site | None = None
+    last: _FetchError | None = None
+
+    for position, site in enumerate(sites):
+        try:
+            meta = _fetch_meta(target, site, cancel, client)
+            used = site
+            break
+        except _CanceledError:
+            return _Outcome("skipped", target.fanha)
+        except _FetchError as exc:
+            # last 只用来解释「为什么最终没成功」，不是「失败过」的标记：
+            # 后面某个站点成功时，前面的失败不该让整条判失败。
+            last = exc
+        except Exception as exc:
+            # 站点实现里的意外异常（驱动崩了、解析抛 TypeError）不该带走整批任务。
+            # 归到 internal_error 只是为了让上游有个固定枚举，这里仍然回退 ——
+            # 「这个站点这条路走不通」正是换下一个站点的理由。
+            log.exception("%s %s 刮削时出现意外异常", _tag(target), site.name)
+            last = _FetchError("internal_error", f"{type(exc).__name__}: {exc}")
+
+        if position == len(sites) - 1:
+            break
+        # 回退是「这一次换人再试」，不是重试：站点的收录范围与反爬强度
+        # 各不相同，A 站 timeout 时 B 站往往直接就能拿到。
+        log.warning(
+            "%s %s 失败（%s：%s），回退到 %s",
+            _tag(target),
+            site.name,
+            last.reason,
+            last.detail,
+            sites[position + 1].name,
+        )
+
+    if meta is None or used is None:
+        reason = last.reason if last is not None else "internal_error"
+        detail = last.detail if last is not None else "所有站点都没有返回可用数据"
+        log.error("%s %s：%s", _tag(target), reason, detail)
+        protocol.item_failed(target.fanha, reason, detail, job=target.job)
+        return _Outcome("failed", target.fanha)
+
+    # 图片下载留在回退循环之外：到了这一步元数据已经到手，而封面/截图来自 CDN，
+    # 与「哪个站点给的地址」无关 —— 换站点只会从头再解析一遍，不一定更好，
+    # 真正该做的是让用户重试（下载失败本身是可重试原因）。
     try:
-        meta = _fetch_meta(target, site, cancel)
-        _download_images(target, meta, downloader, cancel)
+        _download_images(target, meta, used, downloader, cancel)
     except _CanceledError:
         return _Outcome("skipped", target.fanha)
     except _FetchError as exc:
@@ -242,7 +292,84 @@ def _scrape_one(
     return _Outcome("ok", target.fanha)
 
 
-def _fetch_meta(target: Target, site: Site, cancel: threading.Event) -> VideoMeta:
+def _fetch_meta(
+    target: Target, site: Site, cancel: threading.Event, client: httpx.Client
+) -> VideoMeta:
+    """取回元数据。浏览器的归浏览器，HTTP 的归 HTTP。"""
+    if isinstance(site, HttpSite):
+        return _fetch_meta_http(target, site, cancel, client)
+    if isinstance(site, BrowserSite):
+        return _fetch_meta_browser(target, site, cancel)
+    raise _FetchError("internal_error", f"站点 {site.name} 未声明取页方式")
+
+
+def _fetch_meta_http(
+    target: Target, site: HttpSite, cancel: threading.Event, client: httpx.Client
+) -> VideoMeta:
+    """无浏览器路径：定位详情页 → 取 HTML → 解析。
+
+    进度语义与浏览器路径保持一致（search 阶段包含索引查找），这样 UI 不必
+    关心站点属于哪一类。
+    """
+    protocol.progress(target.fanha, "search", _PCT_SEARCH, job=target.job)
+
+    if cancel.is_set():
+        raise _CanceledError
+
+    try:
+        detail_url = site.locate(client, target.fanha)
+    except SiteUnavailable as exc:
+        # 站点暂时不可达：交给上层的站点链决定要不要换人，换完仍失败时
+        # 归到「可重试」这一档。
+        raise _FetchError("timeout", f"{site.name} 不可用：{exc}") from None
+    if not detail_url:
+        raise _FetchError("not_found", f"站点未收录：{target.fanha}")
+
+    protocol.progress(target.fanha, "detail", _PCT_DETAIL, job=target.job)
+    if cancel.is_set():
+        raise _CanceledError
+
+    html = _http_get_text(client, detail_url)
+    meta = site.parse_detail(html, target.fanha)
+    if meta is None or not meta.is_usable():
+        raise _FetchError(
+            "parse_failed",
+            f"详情页解析不到标题或封面，站点结构可能已变化：{detail_url}",
+        )
+    log.info(
+        "%s 解析完成（%s）：标题=%s，封面=%s，截图=%d 张",
+        _tag(target),
+        site.name,
+        meta.title,
+        meta.cover_url,
+        len(meta.shot_urls),
+    )
+    return meta
+
+
+def _http_get_text(client: httpx.Client, url: str) -> str:
+    """取一个 HTML 页面。失败按协议原因分类，不做静默重试。"""
+    try:
+        response = client.get(url)
+    except httpx.HTTPError as exc:
+        raise _FetchError("timeout", f"{type(exc).__name__}: {exc}（{url}）") from None
+
+    if response.status_code == 404:
+        raise _FetchError("not_found", f"详情页不存在：{url}")
+    if response.status_code != 200:
+        raise _FetchError("timeout", f"详情页 HTTP {response.status_code}：{url}")
+    if not response.content:
+        raise _FetchError("timeout", f"详情页响应为空：{url}")
+
+    # 站点没在 Content-Type 里带 charset，显式钉 UTF-8：中文标题走到「猜编码」
+    # 上不会报错，只会静默变成乱码。
+    response.encoding = "utf-8"
+    return response.text
+
+
+def _fetch_meta_browser(
+    target: Target, site: BrowserSite, cancel: threading.Event
+) -> VideoMeta:
     """用一次浏览器会话取回元数据。
 
     搜索页与详情页必须共用同一个会话：重建会话会丢掉已验证的 Cloudflare 通行
@@ -329,6 +456,7 @@ def _check_out_dir(target: Target) -> None:
 def _download_images(
     target: Target,
     meta: VideoMeta,
+    site: Site,
     downloader: ImageDownloader,
     cancel: threading.Event,
 ) -> None:
@@ -337,9 +465,14 @@ def _download_images(
     layout.prepare(target.out)
     log.info("%s 输出目录就绪：%s", tag, target.out)
 
+    # 封面文件名由站点决定（javranking 只给 WebP）。写错扩展名不会报错，
+    # 但会让 Go 侧的 ServeContent 按扩展名声明的类型与真实字节不符。
+    cover_name = site.cover_name
     protocol.progress(target.fanha, "download_cover", _PCT_COVER, job=target.job)
     if not downloader.download(
-        meta.cover_url, layout.cover_path(target.out), overwrite=target.force
+        meta.cover_url,
+        layout.cover_path(target.out, cover_name),
+        overwrite=target.force,
     ):
         raise _FetchError("download_failed", f"封面下载失败：{meta.cover_url}")
 
@@ -360,7 +493,7 @@ def _download_images(
     # 报给 Go 的必须是**磁盘实况**，不是「下载函数说成功」的清单。两者在同步盘、
     # 杀软、目录被并发清理时会分叉，而边车 JSON 一旦写下这些文件名，全系统就按
     # 它们找图 —— 写进去一个不存在的路径会变成永久性的「缺图」，且无处可查。
-    cover_file = _verify_cover(target)
+    cover_file = _verify_cover(target, cover_name)
     shot_files = _verify_shots(target, total)
 
     # 封面没落盘就不算成功：cover 是全系统找图的唯一依据。宁可让这条报失败、
@@ -368,7 +501,7 @@ def _download_images(
     if not cover_file:
         raise _FetchError(
             "download_failed",
-            f"封面写入后不在磁盘上：{layout.cover_path(target.out)}",
+            f"封面写入后不在磁盘上：{layout.cover_path(target.out, cover_name)}",
         )
 
     # 部分截图缺失不算整条失败：元数据与封面已经拿到，仍然有价值。数量上的差异
@@ -391,16 +524,16 @@ def _download_images(
     protocol.item_done(target.fanha, result.to_payload(), job=target.job)
 
 
-def _verify_cover(target: Target) -> str:
+def _verify_cover(target: Target, name: str = layout.COVER_NAME) -> str:
     """确认封面真的在磁盘上，返回相对文件名；不在则返回空串。
 
     `download()` 内部已经校验过一次，这里再查一遍是因为它同时覆盖「跳过已存在
     文件」那条路径 —— 那条路径只看文件在不在，不保证 Go 拿到路径之后文件还活着
     （同步盘、杀软隔离、用户手删）。
     """
-    path = layout.cover_path(target.out)
+    path = layout.cover_path(target.out, name)
     if path.is_file() and path.stat().st_size > 0:
-        return layout.COVER_NAME
+        return name
     log.error("%s 封面未落盘：%s", _tag(target), path)
     return ""
 
@@ -519,7 +652,11 @@ def _build_parser() -> argparse.ArgumentParser:
     scrape = sub.add_parser(
         "scrape", parents=[common], help="刮削，job 从 stdin 读 NDJSON"
     )
-    scrape.add_argument("--site", default="javlibrary", help="站点标识")
+    scrape.add_argument(
+        "--site",
+        default="javlibrary,javranking",
+        help="站点链，逗号分隔，按顺序回退（默认 javlibrary,javranking）",
+    )
     scrape.add_argument(
         "--concurrency",
         type=int,

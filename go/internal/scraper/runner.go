@@ -65,6 +65,13 @@ type Result struct {
 	FatalDetail string
 }
 
+// DefaultSite 是默认站点链，按顺序回退。
+//
+// javlibrary 收录最全但有 Cloudflare，每条 job 都要过一遍验证码等待；
+// javranking 没有反爬、直接读 JSON 索引，收录少一些。先走前者，未收录或
+// 被拦下时自动换后者 —— Python 侧按逗号拆分并逐站尝试，Go 不需要关心细节。
+const DefaultSite = "javlibrary,javranking"
+
 // Runner 负责启动、监控并（在需要时）终止刮削器进程。
 type Runner struct {
 	ExePath     string

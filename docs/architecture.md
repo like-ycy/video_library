@@ -135,8 +135,9 @@
 │   │   ├── downloader.py            # 图片下载（httpx，含重试）
 │   │   ├── models.py                # 输出的元数据 dataclass
 │   │   └── sites/
-│   │       ├── base.py              # Site 抽象
-│   │       └── javlibrary.py        # 站点解析实现
+│   │       ├── base.py              # Site 抽象（BrowserSite / HttpSite）
+│   │       ├── javlibrary.py        # 站点解析实现（浏览器 + Cloudflare）
+│   │       └── javranking.py        # 站点解析实现（纯 HTTP + JSON 索引）
 │   └── tests/
 ├── tools/
 │   ├── build.sh                     # macOS 一键：Python + Go + 组装
@@ -565,16 +566,34 @@ python/
 │   ├── models.py                    # VideoMeta dataclass
 │   ├── layout.py                    # 输出目录创建与路径规划
 │   └── sites/
-│       ├── base.py                  # Site 抽象（search / parse_detail）
-│       └── javlibrary.py            # 站点实现（★ 现解析逻辑迁入此处）
+│       ├── base.py                  # Site 抽象（BrowserSite / HttpSite）
+│       ├── javlibrary.py            # 站点实现（★ 现解析逻辑迁入此处）
+│       └── javranking.py            # 站点实现（JSON 索引 + 详情页，无浏览器）
 └── tests/
 ```
+
+### 5.2.1 两种站点
+
+站点只分两类，差别仅在**HTML 从哪来**；解析、落盘、事件上报、失败原因映射
+全部共用同一条路径：
+
+| 基类 | 取页方式 | 代表站点 | 需要的接口 |
+|---|---|---|---|
+| `BrowserSite` | seleniumbase 会话（过 Cloudflare / 验证码） | javlibrary | `search_url` / `pick_detail_url` / `parse_detail` |
+| `HttpSite` | 复用下载用的那条 `httpx.Client` | javranking | `locate`（番号 → 详情页 URL）/ `parse_detail` |
+
+`Site.requires_browser=False` 的站点不要求机器上装 Chrome —— `cli` 只在链上
+存在浏览器站点时才做这项前置检查。
+
+`Site.cover_name` 决定封面的落盘文件名，默认 `cover.jpg`。javranking 只提供
+WebP，因此它是 `cover.webp`：Go 侧用 `http.ServeContent` 按扩展名推 Content-Type，
+文件名就是它对外的类型声明，写错不会报错，只会让图打不开。
 
 ### 5.3 子命令
 
 ```bash
 # 刮削：job 列表从 stdin 读（NDJSON），配置走 argv
-scraper.exe scrape --site javlibrary --concurrency 2 --timeout 60 --retries 2
+scraper.exe scrape --site javlibrary,javranking --concurrency 2 --timeout 60 --retries 2
 
 # 环境自检：供 Go 在用户点「开始刮削」前调用
 scraper.exe doctor
@@ -616,8 +635,9 @@ job，两个文件的事件会互相覆盖，于是边车 JSON 里记下的是**
 | `cli.py` | 子命令解析、读 stdin job、调度并发、汇总统计、退出码 |
 | `browser.py` | 封装 `SB(uc=True, headless=True)`；页面加载 + 年龄确认 + `solve_captcha()`；上下文管理器保证异常时退出会话 |
 | `downloader.py` | 复用一条 `httpx.Client`；重试与超时；图片写盘 + 写完立即复核（存在且大小相符） |
-| `sites/base.py` | `Site` 抽象：`search_url(fanha)` / `parse_detail(html) -> VideoMeta` |
+| `sites/base.py` | `Site` 抽象：`BrowserSite`（`search_url` / `pick_detail_url` / `parse_detail`）与 `HttpSite`（`locate` / `parse_detail`），外加 `requires_browser` 与 `cover_name` 两个声明 |
 | `sites/javlibrary.py` | 现 `generate.py` 的 `search_detail_url` / `parse_detail` 逻辑迁入，含 `/cn/jav` 链接选择、`previewthumbs` 解析、图片地址统一 `urljoin` 补全（绝对 / `//` / `/imgs` 三种形态都要认） |
+| `sites/javranking.py` | 纯 HTTP 站点：读 `/zh-hans/search-index.json`（约 18MB / 33k 条，按 ETag 缓存在数据目录）把番号换成数字 videoId，再取详情页解析。JSON-LD（`@type` 是 `Movie`）优先、DOM 兜底；封面只给 WebP，截图取其 `a[href]` 原图（800×534 一档，比 javlibrary 的缩略图大） |
 | `models.py` | `VideoMeta` dataclass，字段与 §7.2 的边车 JSON 一一对应（但不负责落盘） |
 | `layout.py` | 依据 `job.out` 建目录、定文件名（`cover.jpg` / `images/N.jpg`） |
 
@@ -668,12 +688,25 @@ Go                                     Python
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `--site` | string | 必填 | 站点标识，当前 `javlibrary` |
+| `--site` | string | `javlibrary,javranking` | 站点链，逗号分隔，按顺序回退 |
 | `--concurrency` | int | 2 | 同时处理的 job 数（1–8） |
 | `--timeout` | int | 60 | 单页面加载超时（秒） |
 | `--retries` | int | 2 | 单项失败重试次数 |
 | `--jobs-from` | string | `-` | job 来源，`-` 表示 stdin |
 | `--log-level` | string | `info` | 只影响 stderr |
+
+**站点回退语义**（`--site` 写成多段时）：
+
+- 前一个站点失败就换下一个，**对每条 job 独立判断**，不是整批降级。
+- 触发回退的原因：`not_found` / `timeout` / `parse_failed` / `captcha_failed`。
+  这四类都是「换个站点往往就能拿到」的情况，其中 `not_found`（A 站没收录）是
+  最常见的那一种。
+- 不触发回退：`internal_error`（输出目录不对，换站点也一样），以及图片下载失败
+  —— 那一步的元数据已经到手，封面/截图来自 CDN，与「哪个站点给的地址」无关，
+  重试才是正确动作。
+- 回退会重发一次 `search` 阶段的 progress（百分比回到 5%），日志里有一行
+  「…失败（原因），回退到 …」。
+- 链上**任何一段**写错（未知站点名）都立刻以退出码 2 报错，不做静默跳过。
 
 ### 6.3 环境变量
 
@@ -887,6 +920,10 @@ def emit(payload: dict) -> None:
 
 > 关于 `cover` / `screenshots` 的相对基准：**以演员目录为基准**（与现版本一致）。
 > 前端不再手工拼 `currentActorDir`，改由 Go 在查询时拼成 `/art/<libID>/<演员>/<相对路径>`。
+>
+> `cover` 的文件名由站点决定（`Site.cover_name`）：javlibrary 给 JPEG → `cover.jpg`，
+> javranking 只提供 WebP → `cover.webp`。Go 侧不假设扩展名，只按边车里的字符串
+> 找文件、按扩展名交给 `http.ServeContent` 推断 Content-Type。
 
 ### 7.3 SQLite schema
 
@@ -1250,6 +1287,8 @@ Go 侧启动刮削前的流程：
 | R11 | 单个视频刮削失败导致历史元数据丢失 | 静默数据丢失（**现有 bug**） | 边车 JSON 改 merge 语义（§4.2 sidecar） |
 | R12 | onefile 模式驱动目录每次都是新的临时路径 | 驱动无法复用，且极易被杀软误报 | 用 `--onedir`（§9.1） |
 | R13 | 打包后驱动落在产物内部的 `_internal/seleniumbase/drivers/` | 装在受保护位置时不可写 → 驱动装不进去；覆盖安装时驱动随产物一起丢 | 启动时重定向到用户数据目录，与产物解耦（见下方专项说明） |
+| R14 | javranking 的搜索索引 18MB（gzip 3.7MB） | 每台机器首次刮削要多花约 10 秒；索引取不到时该站点不可用 | 按 ETag 缓存在数据目录（`cache/javranking-search-index.json`），同一进程内只加载一次、跨进程只做一次 304；网络失败时退化到本地缓存；整条链失败仍由 javlibrary 兜住 |
+| R15 | javranking 把 `/zh-hans/videos/<番号>/` 301 到一个 404 的 `/zh-hans/v/` 路由 | 用番号直达详情页不可行 | 一律从索引取数字 videoId 再拼 `/videos/<id>/`（已在 `locate()` 里固化） |
 
 #### R13 专项说明：驱动落地目录必须重定向
 

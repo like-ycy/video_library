@@ -28,8 +28,18 @@ mkdir -p '/tmp/lib/演员A'
 printf '%s\n' \
   '{"fanha":"ipzz-001","out":"/tmp/lib/演员A/meta/ipzz-001","job":"演员A/ipzz-001"}' \
   '{"fanha":"ipzz-002","out":"/tmp/lib/演员A/meta/ipzz-002","job":"演员A/ipzz-002"}' \
-  | uv run scraper scrape --site javlibrary --concurrency 2
+  | uv run scraper scrape --site javlibrary,javranking --concurrency 2
 ```
+
+`--site` 是**站点链**（逗号分隔，按顺序回退），默认 `javlibrary,javranking`：
+
+| 站点 | 取页方式 | 备注 |
+|---|---|---|
+| `javlibrary` | seleniumbase（过 Cloudflare） | 收录最全，每条约 20 秒固定等待 |
+| `javranking` | 纯 httpx | 无验证码；首次运行下载 18MB 搜索索引（ETag 缓存后可复用），之后每条只需一次详情页 |
+
+`javranking` 不需要 Chrome；只写它时（`--site javranking`）不会因为没装浏览器而
+拒绝运行。封面文件名按站点给出的格式走（该站只给 WebP，落 `cover.webp`）。
 
 `job` 是 Go 侧给出的不透明标识，刮削器只负责在每条事件里原样回显（可选；
 手工调用时可以不传，事件会按番号回传）。
