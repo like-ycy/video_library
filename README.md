@@ -32,10 +32,15 @@ Release 上有两套 App 包，按需要挑一个：
 
 - 浏览、播放完全不受影响（这两条路径不碰刮削器）
 - 点「开始刮削」时，刮削页顶部会出现「下载安装」按钮，点一下即装好并生效
-- 下载源可在 设置 → 刮削器 → 组件下载源 换成镜像前缀（形如 `https://ghproxy.example/`）
-- 也可以手动指定自己编译的刮削器：设置 → 刮削器 → scraper 路径
+- 设置 → 刮削器设置 顶部的组件卡片显示已装版本，可重新下载或更新
+- 下载源可在 设置 → 刮削器设置 → 组件下载源 换成镜像前缀（形如 `https://ghproxy.example/`）
+- 也可以手动指定自己编译的刮削器：设置 → 刮削器设置 → scraper 路径
+- 想彻底关掉下载入口：设置 → 刮削器设置 → 关掉「缺少时允许一键下载安装」
 
-产物细节与 CI 流程见 [`docs/release-workflow.md`](docs/release-workflow.md)。
+Release 上除两类 App 包外还有 `scraper_<ver>_<os>_<arch>.zip`（组件包）、
+`manifest.json`（组件清单）与 `SHA256SUMS.txt`。**这些不用手动挑**，由 App 按清单
+下载并校验；手动核验下载物时才用得上校验和。产物细节与 CI 流程见
+[`docs/release-workflow.md`](docs/release-workflow.md)。
 
 ## 环境要求
 
@@ -43,11 +48,11 @@ Release 上有两套 App 包，按需要挑一个：
 |---|---|---|
 | Python | 3.14 | 由 uv 管理。锁定 `seleniumbase==4.51.2` |
 | uv | 0.12+ | |
-| Go | 1.23+ | |
+| Go | 1.26+ | `go/go.mod` 声明的版本 |
 | Wails CLI | v2 | `go install github.com/wailsapp/wails/v2/cmd/wails@latest`，装在 `$GOPATH/bin` |
 | Node | 20+ | Wails 会调用，但本项目不需要前端构建 |
 | Chrome | 任意近期版本 | **不可打包**，目标机必须已安装 |
-| ffprobe | 6+ | 可选。放在 `tools/bin/ffprobe.exe`，缺失时只是少显示时长与编码 |
+| ffprobe | 6+ | 可选。放在 `tools/bin/ffprobe`（Windows 上为 `ffprobe.exe`），缺失时只是少显示时长与编码 |
 
 **Windows / 另一架构的完整产物走 CI，不在本机交叉打 scraper。**
 
@@ -118,6 +123,15 @@ wails build        # 打包
 > 测试文件按 `.gitignore` 约定不入库（`**/*_test.go`、`python/tests/`）。
 > 从仓库克隆下来跑 `go test ./...` 会显示「no test files」，属预期结果 ——
 > 测试只存在于开发者本地。
+
+### 代码检查
+
+两侧各自独立，提交前跑一遍：
+
+```bash
+cd python && uv format && uv run ruff check
+cd go && gofmt -l . && go vet ./... && go build ./...
+```
 
 ## 关于 Cloudflare 认证代码
 
