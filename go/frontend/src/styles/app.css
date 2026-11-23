@@ -49,25 +49,4 @@ body {
   font-family: var(--font-title);
 }
 
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--scroll-track);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--scroll-thumb);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--scroll-thumb-hover);
-}
-
-::selection {
-  background: var(--primary);
-  color: var(--on-primary);
-}
+/* 滚动条与 ::selection 已上收到 xwang-ui 的 base.css，全站统一一份。 */

@@ -1,23 +1,35 @@
-/* 页面、媒体与窗口布局使用公共包语义色，不再维护第二套调色板。 */
+/*
+ * 兼容别名层 —— 逐步废弃（deprecated）。
+ *
+ * 取值一律转发 xwang-ui tokens.css，这里不定义任何新颜色。
+ * 新代码请直接用公共包的语义变量：var(--color-surface) / var(--color-foreground) / ...
+ * 存量约 148 处引用按页面分批替换，替换完这一层就可以整个删掉。
+ *
+ * 注意：--radius-panel / --radius-pill / --control-* 暂时仍是字面值，
+ * 因为当前安装的 xwang-ui v0.1.1 还没有这几个变量，改成 var() 会解析不到。
+ * 升到 v0.2.0 之后可以删掉字面值，由公共包提供。
+ */
 :root {
+  /* 底色与表面 */
   --bg: var(--color-background);
   --titlebar-bg: var(--color-surface);
   --card: var(--color-surface);
   --surface: var(--color-surface-2);
-  --surface-hover: var(--color-surface-3);
-  --subtle: var(--color-surface-2);
+
+  /* 主色 */
   --primary: var(--color-primary);
   --primary-hover: var(--color-primary-hover);
-  --primary-active: var(--color-primary-active);
   --primary-container: var(--color-primary-soft);
   --on-primary: var(--color-on-primary);
+
+  /* 文字与描边 */
   --text: var(--color-foreground);
   --muted: var(--color-muted);
   --faint: var(--color-faint);
   --border: var(--color-border);
   --border-strong: var(--color-border-strong);
-  --border-soft: var(--color-border);
-  --input-bg: var(--color-surface);
+
+  /* 语义色 */
   --ok: var(--color-success);
   --ok-bg: var(--color-success-soft);
   --ok-border: var(--color-success);
@@ -30,31 +42,23 @@
   --info: var(--color-info);
   --info-bg: var(--color-info-soft);
   --info-border: var(--color-info);
-  --scroll-track: var(--color-background);
-  --scroll-thumb: var(--color-border-strong);
-  --scroll-thumb-hover: var(--color-faint);
-  --radius-panel: 10px;
-  --radius-pill: 999px;
+
+  /* 阴影 */
   --shadow-sm: var(--shadow-card);
   --shadow-md: var(--shadow-dialog);
+
+  /* 圆角与控件高度：待 v0.2.0 后改为引用公共包变量 */
+  --radius-panel: 10px;
+  --radius-pill: 999px;
   --control-sm: 28px;
   --control: 32px;
-  --control-lg: 40px;
+
+  /* 窗口与页面布局常量（仅本应用使用） */
   --sidebar-w: 240px;
   --titlebar-h: 40px;
   --actor-panel-w: 220px;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
 
-  /* Type — Inter stack per design contract */
-  --font-body: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-  --font-title: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", Consolas, ui-monospace, monospace;
+  /* 字号阶梯：12 / 14 / 16 三档 + 页面级标题 */
   --fs-xs: 12px;
   --fs-sm: 12px;
   --fs-base: 14px;
@@ -62,4 +66,9 @@
   --fs-lg: 16px;
   --fs-title: 24px;
   --fs-section: 20px;
+
+  /* 字体：转发公共包字体栈（--font-mono 同名，无法转发，保留字面值） */
+  --font-body: var(--font-sans);
+  --font-title: var(--font-sans);
+  --font-mono: "JetBrains Mono", Consolas, ui-monospace, monospace;
 }
