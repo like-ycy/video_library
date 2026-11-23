@@ -228,7 +228,11 @@
   position: absolute;
   left: 8px;
   right: 8px;
-  bottom: 8px;
+  /*
+   * 12px 而不是 8px：卡片带观看进度时海报底部还有一条 4px 进度条（h-1），
+   * 8px 会让「已刮削」角标几乎贴到进度条上，看起来像被切掉了下半截。
+   */
+  bottom: 12px;
   z-index: 2;
   display: flex;
   justify-content: space-between;
