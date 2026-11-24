@@ -71,7 +71,7 @@
   flex: 0 0 auto;
   align-self: stretch;
   overflow: hidden;
-  background: var(--surface);
+  background: var(--color-surface-2);
 }
 
 .video-card .poster img {
