@@ -15,13 +15,13 @@
   flex: 0 0 var(--actor-panel-w);
   display: flex;
   flex-direction: column;
-  background: var(--card);
-  border-right: 1px solid var(--border);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
 }
 
 .actor-panel-head {
   padding: 10px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .actor-list {
@@ -47,7 +47,7 @@
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
   flex: 0 0 auto;
 }
 
@@ -59,24 +59,24 @@
   height: 22px;
   padding: 0 10px;
   border-radius: var(--radius-pill);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
   font-size: var(--fs-xs);
-  color: var(--muted);
+  color: var(--color-muted);
   display: inline-flex;
   align-items: center;
 }
 
 .genre-chip.active {
-  background: var(--primary-container);
-  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
-  color: var(--primary);
+  background: var(--color-primary-soft);
+  border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+  color: var(--color-primary);
 }
 
 .filters .count-label {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  color: var(--muted);
+  color: var(--color-muted);
   margin-left: 8px;
 }
 
@@ -97,8 +97,8 @@
 }
 
 .video-card {
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   /*
    * 不能用 overflow: hidden —— 它是 grid item 且自身是 flex 容器时，
@@ -134,21 +134,21 @@
 }
 
 .video-card-main:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--color-primary);
   outline-offset: -2px;
 }
 
 .video-card:hover {
   transform: translateY(-2px);
-  border-color: var(--primary);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-card);
 }
 
 .video-card .poster,
 .video-card .thumb {
   position: relative;
   aspect-ratio: 2 / 3;
-  background: var(--surface);
+  background: var(--color-surface-2);
   overflow: hidden;
   display: block;
   width: 100%;
@@ -178,12 +178,12 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  color: var(--faint);
+  color: var(--color-faint);
 }
 
 .video-card .poster .placeholder .ms {
   font-size: 36px;
-  color: var(--border-strong);
+  color: var(--color-border-strong);
 }
 
 .video-card .fanha-chip {
@@ -194,10 +194,10 @@
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: 600;
-  color: var(--primary);
-  background: color-mix(in srgb, var(--card) 90%, transparent);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
   backdrop-filter: blur(6px);
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   padding: 2px 7px;
 }
@@ -210,10 +210,10 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--card) 85%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
   backdrop-filter: blur(6px);
-  border: 1px solid var(--border);
-  color: var(--danger);
+  border: 1px solid var(--color-border);
+  color: var(--color-danger);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -271,7 +271,7 @@
 
 .video-card .card-title {
   font-size: var(--fs-xs);
-  color: var(--muted);
+  color: var(--color-muted);
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -281,18 +281,18 @@
 }
 
 .video-card:hover .card-title {
-  color: var(--primary);
+  color: var(--color-primary);
 }
 
 .video-card .card-foot {
   margin-top: 6px;
   padding-top: 8px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--color-border);
   display: flex;
   justify-content: space-between;
   font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--faint);
+  color: var(--color-faint);
 }
 
 .load-more {
@@ -327,12 +327,12 @@
 
 .detail-row {
   font-size: var(--fs-sm);
-  color: var(--muted);
+  color: var(--color-muted);
   padding: 3px 0;
 }
 
 .detail-row b {
-  color: var(--text);
+  color: var(--color-foreground);
   font-weight: 500;
 }
 
@@ -354,7 +354,7 @@
   width: 100%;
   border-radius: var(--radius-control);
   cursor: pointer;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
 }
 
 .player {
@@ -389,7 +389,7 @@
   gap: 8px;
   align-items: center;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
   flex: 0 0 auto;
 }
 
@@ -409,9 +409,9 @@
 .table-wrap {
   flex: 1;
   overflow-y: auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
-  background: var(--card);
+  background: var(--color-surface);
   min-width: 0;
 }
 
@@ -424,35 +424,35 @@ table.candidates {
 table.candidates th {
   position: sticky;
   top: 0;
-  background: var(--surface);
+  background: var(--color-surface-2);
   text-align: left;
   padding: 8px 10px;
   font-weight: 500;
   font-size: var(--fs-xs);
-  color: var(--muted);
-  border-bottom: 1px solid var(--border);
+  color: var(--color-muted);
+  border-bottom: 1px solid var(--color-border);
   z-index: 1;
 }
 
 table.candidates td {
   padding: 7px 10px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 table.candidates tr:hover td {
-  background: var(--surface);
+  background: var(--color-surface-2);
 }
 
 /* 空状态行：td 不能用 flex 布局的 .empty，否则列宽会塌缩 */
 table.candidates td.empty-cell {
   text-align: center;
-  color: var(--muted);
+  color: var(--color-muted);
   padding: 48px 10px;
 }
 
 table.candidates input[type='checkbox'] {
   cursor: pointer;
-  accent-color: var(--primary);
+  accent-color: var(--color-primary);
 }
 
 .progress-panel {
@@ -467,23 +467,23 @@ table.candidates input[type='checkbox'] {
   display: flex;
   gap: 14px;
   font-size: var(--fs-xs);
-  color: var(--muted);
+  color: var(--color-muted);
   font-family: var(--font-mono);
 }
 
 .counts .ok {
-  color: var(--ok);
+  color: var(--color-success);
 }
 
 .counts .failed {
-  color: var(--danger);
+  color: var(--color-danger);
 }
 
 .log {
   font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1.6;
-  color: var(--muted);
+  color: var(--color-muted);
   white-space: pre-wrap;
   word-break: break-all;
 }
@@ -503,16 +503,16 @@ table.candidates input[type='checkbox'] {
 
 .item .f {
   font-family: var(--font-mono);
-  color: var(--muted);
+  color: var(--color-muted);
   min-width: 88px;
 }
 
 .item.ok .msg {
-  color: var(--ok);
+  color: var(--color-success);
 }
 
 .item.failed .msg {
-  color: var(--danger);
+  color: var(--color-danger);
 }
 
 .item .msg {
@@ -549,8 +549,8 @@ table.candidates input[type='checkbox'] {
 .continue-card {
   flex: 0 0 280px;
   max-width: 100%;
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   overflow: hidden;
   display: flex;
@@ -564,7 +564,7 @@ table.candidates input[type='checkbox'] {
   aspect-ratio: 16 / 9;
   border: none;
   padding: 0;
-  background: var(--surface);
+  background: var(--color-surface-2);
   cursor: pointer;
   overflow: hidden;
 }
@@ -582,7 +582,7 @@ table.candidates input[type='checkbox'] {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--faint);
+  color: var(--color-faint);
 }
 
 .continue-thumb .fanha-chip {
@@ -593,10 +593,10 @@ table.candidates input[type='checkbox'] {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: 600;
-  color: var(--primary);
-  background: color-mix(in srgb, var(--card) 90%, transparent);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
   backdrop-filter: blur(6px);
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   padding: 2px 7px;
 }
@@ -611,7 +611,7 @@ table.candidates input[type='checkbox'] {
   opacity: 0;
   transition: opacity 0.15s ease;
   background: rgb(0 0 0 / 35%);
-  color: var(--on-primary);
+  color: var(--color-on-primary);
   pointer-events: none;
 }
 
@@ -641,7 +641,7 @@ table.candidates input[type='checkbox'] {
 
 .continue-title {
   font-size: var(--fs-sm);
-  color: var(--text);
+  color: var(--color-foreground);
   line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -656,11 +656,11 @@ table.candidates input[type='checkbox'] {
   justify-content: space-between;
   gap: 8px;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 
 .continue-pct {
-  color: var(--primary);
+  color: var(--color-primary);
   font-weight: 600;
 }
 
@@ -673,7 +673,7 @@ table.candidates input[type='checkbox'] {
 }
 
 .continue-foot .muted {
-  color: var(--muted);
+  color: var(--color-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -703,8 +703,8 @@ table.candidates input[type='checkbox'] {
   gap: 14px;
   align-items: center;
   padding: 10px;
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   overflow: hidden;
 }
@@ -719,7 +719,7 @@ table.candidates input[type='checkbox'] {
   aspect-ratio: 16/10;
   border-radius: 6px;
   overflow: hidden;
-  background: var(--surface);
+  background: var(--color-surface-2);
   border: none;
   padding: 0;
   cursor: pointer;
@@ -737,12 +737,12 @@ table.candidates input[type='checkbox'] {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--faint);
+  color: var(--color-faint);
 }
 
 .history-title {
   font-size: var(--fs-sm);
-  color: var(--text);
+  color: var(--color-foreground);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -753,7 +753,7 @@ table.candidates input[type='checkbox'] {
   flex-wrap: wrap;
   gap: 10px;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 
 .history-actions {
@@ -772,7 +772,7 @@ table.candidates input[type='checkbox'] {
 }
 
 .history-top .muted {
-  color: var(--muted);
+  color: var(--color-muted);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -816,8 +816,8 @@ table.candidates input[type='checkbox'] {
   align-items: center;
   padding: 10px 12px;
   border-radius: var(--radius-card);
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
 }
 
 .issue-main {
@@ -829,7 +829,7 @@ table.candidates input[type='checkbox'] {
 
 .issue-tip {
   font-size: 11px;
-  color: var(--warn);
+  color: var(--color-warning);
 }
 
 /* ── Settings ── */
@@ -897,10 +897,10 @@ table.candidates input[type='checkbox'] {
   gap: 12px;
   margin: 12px 16px 0;
   padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--primary);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-primary);
   border-radius: 6px;
-  background: var(--surface);
+  background: var(--color-surface-2);
 }
 
 .component-prompt > div:first-child {
