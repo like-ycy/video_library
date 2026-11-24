@@ -3,11 +3,7 @@
  *
  * 取值一律转发 xwang-ui tokens.css，这里不定义任何新颜色。
  * 新代码请直接用公共包的语义变量：var(--color-surface) / var(--color-foreground) / ...
- * 存量约 148 处引用按页面分批替换，替换完这一层就可以整个删掉。
- *
- * 注意：--radius-panel / --radius-pill / --control-* 暂时仍是字面值，
- * 因为当前安装的 xwang-ui v0.1.1 还没有这几个变量，改成 var() 会解析不到。
- * 升到 v0.2.0 之后可以删掉字面值，由公共包提供。
+ * 存量引用按页面分批替换，替换完这一层就可以整个删掉。
  */
 :root {
   /* 底色与表面 */
@@ -47,11 +43,9 @@
   --shadow-sm: var(--shadow-card);
   --shadow-md: var(--shadow-dialog);
 
-  /* 圆角与控件高度：待 v0.2.0 后改为引用公共包变量 */
-  --radius-panel: 10px;
-  --radius-pill: 999px;
-  --control-sm: 28px;
-  --control: 32px;
+  /* 圆角与控件高度：引用公共包（公共包的控件高度命名多了 -h 后缀） */
+  --control-sm: var(--control-h-sm);
+  --control: var(--control-h);
 
   /* 窗口与页面布局常量（仅本应用使用） */
   --sidebar-w: 240px;
@@ -67,8 +61,7 @@
   --fs-title: 24px;
   --fs-section: 20px;
 
-  /* 字体：转发公共包字体栈（--font-mono 同名，无法转发，保留字面值） */
+  /* 字体：正文与标题转发公共包字体栈；--font-mono 由公共包唯一定义 */
   --font-body: var(--font-sans);
   --font-title: var(--font-sans);
-  --font-mono: "JetBrains Mono", Consolas, ui-monospace, monospace;
 }
