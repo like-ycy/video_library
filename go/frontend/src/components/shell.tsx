@@ -1,9 +1,17 @@
 import type { ReactNode } from "react";
 import { Badge, Button } from "xwang-ui";
 
-export function Icon({ name, fill = false }: { name: string; fill?: boolean }) {
+export function Icon({
+  name,
+  fill = false,
+  className = "",
+}: {
+  name: string;
+  fill?: boolean;
+  className?: string;
+}) {
   return (
-    <span aria-hidden="true" className={`ms${fill ? " fill" : ""}`}>
+    <span aria-hidden="true" className={`ms${fill ? " fill" : ""}${className ? ` ${className}` : ""}`}>
       {name}
     </span>
   );

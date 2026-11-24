@@ -1,5 +1,16 @@
-@import "tailwindcss";
+/*
+ * 公共包先引入、tailwindcss 后引入 —— 顺序不能反。
+ *
+ * tailwindcss 会在自己的位置生成本应用的 utilities 层；公共包的 CSS 也是
+ * 一份编译好的 utilities。两者同名，谁在后面谁的声明生效。公共包放前面，
+ * 业务侧就能用 className 正常覆盖组件内置的 px-2.5 之类的 utility；
+ * 反过来（公共包在后）业务侧的 pl/pr 会被组件内置值顶掉，
+ * 这正是以前那批无层规则 hack 出现的原因。
+ *
+ * 层内顺序不受影响：theme < base < components < utilities 仍是全局规则。
+ */
 @import "xwang-ui/styles.css";
+@import "tailwindcss";
 @import "../assets/fonts/fonts.css" layer(base);
 @import "./styles/tokens.css" layer(base);
 @import "./styles/app.css" layer(base);
@@ -8,35 +19,13 @@
 @import "./styles/views.css" layer(components);
 
 /*
- * shell.css 在 components 层，会输给 xwang-ui Input 的 utilities 层
- * padding（px-2.5=10px），导致搜索图标与 placeholder 重叠。
- * 放在全部 @layer 之后的无层规则里，才能稳定盖住组件 utility。
+ * 库选择器与全局搜索的外观覆盖已改为组件 className：
+ * - 库选择器用 xwang-ui SelectTrigger 的 variant="bare"，边框/背景/高度交给
+ *   .library-select-wrap 自己画。
+ * - 搜索框用 Input 的 pl-8 pr-14 给左右图标留位。
+ * 以前这里靠「放在所有 @layer 之后的无层规则」强行盖组件 utility，
+ * 组件一升级就会静默失效，所以不再保留这类补丁。
  */
-.library-select-wrap [data-slot="select-trigger"] {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  height: auto;
-  padding: 0;
-  width: auto;
-  flex: 1;
-  min-width: 0;
-}
-
-.library-select-wrap [data-slot="select-trigger"]:focus-visible,
-.library-select-wrap [data-slot="select-trigger"][data-state="open"] {
-  border-color: transparent;
-  box-shadow: none;
-  outline: none;
-}
-
-.global-search input {
-  padding: 0 56px 0 32px;
-}
-
-.global-search .ms {
-  z-index: 1;
-}
 
 /*
  * 海报卡片必须撑满网格单元，且高度只由 aspect-ratio 决定。

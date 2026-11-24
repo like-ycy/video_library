@@ -174,27 +174,11 @@ html[data-platform="darwin"] .titlebar-right > .titlebar-sep[data-win-only] {
   pointer-events: none;
 }
 
-.global-search input {
-  width: 100%;
-  height: var(--control);
-  background: var(--card);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
-  padding: 0 56px 0 32px;
-  font-size: var(--fs-md);
-  color: var(--text);
-  outline: none;
-  transition: border-color 0.12s, box-shadow 0.12s;
-}
-
-.global-search input::placeholder {
-  color: var(--faint);
-}
-
-.global-search input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
-}
+/*
+ * 输入框本身的边框/底色/圆角/高度/内边距全部由 xwang-ui Input 提供
+ * （搜索框的内边距在 App.tsx 用 className="pl-8 pr-14" 给图标与角标留位）。
+ * 这里以前重复写了一份，落在 components 层输给组件的 utilities，属于死规则。
+ */
 
 .global-search kbd {
   position: absolute;

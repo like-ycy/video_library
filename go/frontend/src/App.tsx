@@ -228,7 +228,7 @@ function Application() {
               disabled={!libraries.length}
               onValueChange={selectLibrary}
             >
-              <SelectTrigger aria-label="选择视频库" className="w-[180px] h-7">
+              <SelectTrigger variant="bare" aria-label="选择视频库">
                 <SelectValue placeholder="尚未添加视频库" />
               </SelectTrigger>
               <SelectContent>
@@ -248,7 +248,7 @@ function Application() {
         </div>
         <div className="titlebar-center">
           <div className="global-search">
-            <Icon name="search" />
+            <Icon name="search" className="z-10" />
             <Input
               ref={searchRef}
               aria-label="全局搜索"
@@ -256,6 +256,8 @@ function Application() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               onBlur={() => commitSearch(search)}
+              // 左右留出图标与 Ctrl+K 角标的位置；pl/pr 会盖掉组件内置的 px-2.5
+              className="pl-8 pr-14"
               onKeyDown={(event) => {
                 if (event.key === "Enter") commitSearch(search);
                 if (event.key === "Escape") {
