@@ -1,49 +1,14 @@
 /*
- * 兼容别名层 —— 逐步废弃（deprecated）。
+ * video_library 应用级 token。
  *
- * 取值一律转发 xwang-ui tokens.css，这里不定义任何新颜色。
- * 新代码请直接用公共包的语义变量：var(--color-surface) / var(--color-foreground) / ...
- * 存量引用按页面分批替换，替换完这一层就可以整个删掉。
+ * 颜色 / 圆角 / 阴影 / 字体栈全部来自 xwang-ui 的 tokens.css，这里不再转发。
+ * 原先那层兼容别名（--bg / --card / --text …）已在 2026-11 分批替换完毕并删除，
+ * 新代码请直接写公共包的语义变量：var(--color-surface) / var(--color-foreground) / ...
+ *
+ * 这里只留本应用自己的东西：窗口布局常量、字号阶梯、控件高度的短名字。
  */
 :root {
-  /* 底色与表面 */
-  --bg: var(--color-background);
-  --titlebar-bg: var(--color-surface);
-  --card: var(--color-surface);
-  --surface: var(--color-surface-2);
-
-  /* 主色 */
-  --primary: var(--color-primary);
-  --primary-hover: var(--color-primary-hover);
-  --primary-container: var(--color-primary-soft);
-  --on-primary: var(--color-on-primary);
-
-  /* 文字与描边 */
-  --text: var(--color-foreground);
-  --muted: var(--color-muted);
-  --faint: var(--color-faint);
-  --border: var(--color-border);
-  --border-strong: var(--color-border-strong);
-
-  /* 语义色 */
-  --ok: var(--color-success);
-  --ok-bg: var(--color-success-soft);
-  --ok-border: var(--color-success);
-  --warn: var(--color-warning);
-  --warn-bg: var(--color-warning-soft);
-  --warn-border: var(--color-warning);
-  --danger: var(--color-danger);
-  --danger-bg: var(--color-danger-soft);
-  --danger-border: var(--color-danger);
-  --info: var(--color-info);
-  --info-bg: var(--color-info-soft);
-  --info-border: var(--color-info);
-
-  /* 阴影 */
-  --shadow-sm: var(--shadow-card);
-  --shadow-md: var(--shadow-dialog);
-
-  /* 圆角与控件高度：引用公共包（公共包的控件高度命名多了 -h 后缀） */
+  /* 控件高度：公共包的命名多了 -h 后缀，这里只是本应用沿用的短名字 */
   --control-sm: var(--control-h-sm);
   --control: var(--control-h);
 
