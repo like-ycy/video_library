@@ -143,8 +143,8 @@
 │   └── tests/
 ├── tools/                           # ─── 构建与打包脚本（只放脚本）───
 │   ├── config.env                   # 唯一的项目差异
-│   ├── build.sh / package.sh / component.sh
-│   └── build.ps1 / package.ps1 / component.ps1
+│   ├── build.sh / package.sh / component.sh / prebuild.sh
+│   └── build.ps1 / package.ps1 / component.ps1 / prebuild.ps1
 ├── third_party/                     # 随包分发的预置二进制 <name>/<os>-<arch>/
 │   └── ffprobe/darwin-arm64/ffprobe
 └── dist/                            # 组装目录与归档（gitignore）

@@ -135,25 +135,23 @@ checkout（fetch-depth 0，脚本靠 git describe 取版本）
   → 解析版本（tag 去掉 v；冒烟用 0.1.0）
   → 安装 Go（按 go.mod 锁定）+ Node 22 + uv + Python 3.14
   → 安装 Wails CLI
-  → 非 tag：写空清单 {"schema":1,"components":{}}
+  → 非 tag：写空清单 {"schema":1,"components":{}}（防止仓库里残留旧地址）
   → tools/build.sh --full -v <ver>（Windows：tools\build.ps1 -Full -Version <ver>）
-      内部：PyInstaller onedir → wails build → tools/component.sh → 组装整包
-  → 仅 tag：manifestgen -only <本平台> → 写 go/internal/component/manifest_builtin.json
-  → 仅 tag：再跑一次 --no-python --full，把清单 embed 进 App
-  → 断言整包结构（.app/Contents/MacOS/…、tools/scraper/{scraper,_internal}）
+      内部四步：Python 组件 → tools/component.sh（组件包 + 自述）
+                → tools/prebuild.sh（tag 构建写内置清单）
+                → wails build → 组装并归档标准包 / 整包
+  → 断言结构（.app/Contents/MacOS/…、tools/scraper/{scraper,_internal}）
      并从最终位置真跑一次 scraper version
   → 断言瘦身生效（无 selenium-manager 残留）
-  → tools/package.sh -v <ver>（Windows：tools\package.ps1）产出标准包
   → 断言标准包顶层唯一 VideoLib/ 且不含 tools/
   → 上传 dist/release/*.zip 与 scraper_meta_*.json
 ```
 
-**为什么 tag 构建跑两遍 `build.sh`**：兜底清单的数据（组件包尺寸/sha256/版本）
-由 `tools/component.sh` 在 `build.sh` 末尾才产出，而清单要在 `wails build`
-之前存在才能被 `//go:embed` 进去。第二遍用 `--no-python` 复用 Python 产物，
-只重编 App；组件包从同一棵未改动的产物树重打，内容一致，内置清单里的
-sha256 与最终上传的包对得上。冒烟构建（非 tag）不需要清单里的真实数据，
-直接写空清单，只跑一遍。
+**为什么清单必须在 `wails build` 之前生成**：清单要被 `//go:embed` 编进 App，
+而它的数据（版本/尺寸/sha256）来自组件包与产物自述。`build.sh` 因此把
+组件包放在第 2 步、预构建钩子放第 3 步、App 构建放第 4 步 —— 一次构建就能
+拿到完整清单，不需要「先构建一遍、生成清单、再构建一遍」。分支构建时
+`prebuild.sh` 直接退出，保留仓库里的空清单（见下）。
 
 关键步骤说明：
 

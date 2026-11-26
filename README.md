@@ -12,7 +12,7 @@
 │   ├── tests/
 │   ├── packaging/     PyInstaller 的 pyinstaller.spec 与 entry.py
 │   └── build/pyi/     PyInstaller 产物（不提交）
-├── tools/             构建与打包脚本（build/package/component + config.env）
+├── tools/             构建与打包脚本（build/package/component/prebuild + config.env）
 ├── third_party/       随包分发的预置第三方二进制 <name>/<os>-<arch>/
 ├── dist/              组装目录与发布归档（不提交）
 └── docs/              设计文档
