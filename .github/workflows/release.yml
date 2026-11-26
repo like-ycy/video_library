@@ -1,0 +1,386 @@
+name: Release
+
+# 构建与打包全部收在 tools/build.sh（macOS）与 tools\build.ps1（Windows）里：
+# 本地一条命令能复现的东西，才有资格只在 CI 里跑一次。这个 workflow 只负责
+# 「换平台 → 调脚本 → 断言产物 → 传 artifact」，不重复写 wails 参数与文件名。
+#
+# 为什么 Windows 侧必须放在 Windows runner 上
+# ---------------------------------
+# PyInstaller 不是交叉编译器。官方文档（doc/building-for-other-platforms.rst）：
+#
+#   "PyInstaller is not a cross compiler. Due to Python's dynamic nature,
+#    PyInstaller needs to run snippets of code from the target Python environment
+#    at build time and it can only do that if said environment is runable on
+#    (i.e. built for) the current platform."
+#
+# 也就是说：它需要在构建时**真的执行目标平台的 Python** 来探测依赖，而 macOS
+# 上跑不了 Windows 的 Python。所以 Windows 的 scraper.exe 必须在 Windows
+# runner 上打包；macOS 的 scraper 必须在对应架构的 macOS runner 上打包。
+#
+# 产物形态
+# --------
+# 每个平台 job 产出：
+#   videolib_<ver>_<goos>_<goarch>.zip          标准包（不含 tools/，默认下载项）
+#   videolib_<ver>_full_<goos>_<goarch>.zip     整包（含 tools/scraper，离线用）
+#   scraper_<ver>_<goos>_<goarch>.zip           组件包（App 按需下载的源）
+#   scraper_meta_<goos>_<goarch>.json           产物自述，release job 拼清单用
+#
+# 平台段取 GOOS（darwin / windows），不要写 "macos"：更新器按 runtime.GOOS
+# 拼后缀找资产，改名会让老版本的自更新静默失效。
+
+on:
+  push:
+    tags:
+      - "v*"
+  # 手动触发用于冒烟验证：只传 artifact，不建 Release。
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-app:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # PyInstaller 不交叉编译：arm64 / x64 的 scraper 必须各自在原生
+          # runner 上打。Go/Wails 虽可交叉编译，整包仍按目标架构分开构建，
+          # 避免 App 与 scraper 架构不一致。
+          - goos: darwin
+            goarch: arm64
+            runner: macos-latest
+          - goos: darwin
+            goarch: amd64
+            runner: macos-15-intel
+          - goos: windows
+            goarch: amd64
+            runner: windows-latest
+    env:
+      # Windows runner 默认 ANSI 代码页（cp1252）编不了 spec 打印的中文与
+      # doctor JSON，直接抛 UnicodeEncodeError，看起来像打包失败其实是编码问题。
+      # PYTHONUTF8 同时覆盖 PyInstaller 拉起的子进程。
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # 需要完整 tag 信息，脚本靠 git describe 解析版本号。
+          fetch-depth: 0
+
+      - name: Validate release tag
+        # workflow_dispatch 允许在分支上冒烟，只有 tag 构建才校验格式。
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Release tag must match vMAJOR.MINOR.PATCH"
+            exit 1
+          }
+
+      # 版本号：推 tag 时取 tag 去掉 v；workflow_dispatch 冒烟用 0.1.0。
+      # 同一份 VERSION 交给 build 脚本：它负责注入 _version.py、-ldflags 与
+      # wails.json productVersion，三处显示因此不会打架。
+      - name: 解析版本号
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.1.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go/go.mod
+          # Tag 之间缓存隔离；发布产物不该受上一次构建的缓存影响。
+          cache: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: go/frontend/package-lock.json
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: 安装 Python 3.14
+        run: uv python install 3.14
+
+      - name: Install Wails CLI
+        shell: bash
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+          # 所有带反斜杠的命令都写成块标量（run: |），YAML 双引号会处理转义。
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      # 分支构建先写空清单：清单里的下载地址是 releases/download/<ref>，而
+      # Release 只对 tag 存在。照抄 tag 的规则会生成一批 releases/download/main
+      # 的死地址 —— 包看着能装、点下去必然 404。
+      #
+      # 写成显式覆盖而不是「什么都不做」：仓库里那份可能是上一次本地生成后忘了
+      # 还原的，带着旧地址一起被打进包里就会 404。
+      - name: 分支构建写入空清单
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        shell: bash
+        run: |
+          printf '{"schema":1,"components":{}}\n' \
+            > go/internal/component/manifest_builtin.json
+          echo "非 tag 构建：不内置组件清单（在线清单仍可用）"
+
+      # 一次构建跑完：Python 组件 → 组件包 → 内置清单（tools/prebuild.sh）
+      # → wails build → 标准包 / 整包。
+      #
+      # 清单必须在 wails build 之前写好（它被 embed 进二进制），而清单要读组件包
+      # 与产物自述 —— 所以生成清单这件事由 prebuild.sh 钩子放在第 3 步，不再像
+      # 以前那样「先整包构建一遍、生成清单、再构建一遍」。
+      #
+      # RELEASE_TAG 只在 tag 构建里传：清单里的地址是 releases/download/<ref>，
+      # 分支构建传进去就是一批必然 404 的死链。
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        env:
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: tools/build.sh --full -v "${{ steps.ver.outputs.version }}"
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: .\tools\build.ps1 -Full -Version "${{ steps.ver.outputs.version }}"
+
+      # 结构断言：目录名或可执行名对不上时，用户那边表现为「未找到刮削器组件」，
+      # 而构建日志一片绿 —— 所以必须在最终产物上真查一遍。
+      - name: 断言整包结构
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          suffix="${{ matrix.goos }}_${{ matrix.goarch }}"
+          full="dist/release/videolib_${version}_full_${suffix}.zip"
+          comp="dist/release/scraper_${version}_${suffix}.zip"
+          meta="dist/release/scraper_meta_${suffix}.json"
+          for f in "$full" "$comp" "$meta"; do
+            test -f "$f" || { echo "缺少：$f"; ls -l dist/release; exit 1; }
+          done
+
+          scraper="scraper"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            test -f "dist/VideoLib/VideoLib.exe" || { echo "缺少 VideoLib.exe"; exit 1; }
+            scraper="scraper.exe"
+          else
+            test -f "dist/VideoLib/VideoLib.app/Contents/MacOS/VideoLib" ||
+              { echo "缺少 .app 内的可执行文件"; exit 1; }
+          fi
+          test -f "dist/VideoLib/tools/scraper/$scraper" || { echo "缺少随包 scraper"; exit 1; }
+          test -d "dist/VideoLib/tools/scraper/_internal" || { echo "缺少 _internal"; exit 1; }
+
+          # 从最终位置真跑一次：能跑通才说明 _internal 确实与可执行文件同级，
+          # 而不只是目录名字对上了。
+          "dist/VideoLib/tools/scraper/$scraper" version
+
+          names="$(unzip -Z1 "$full" 2>/dev/null ||
+            python3 -c 'import zipfile,sys;print("\n".join(zipfile.ZipFile(sys.argv[1]).namelist()))' "$full")"
+          stray="$(printf '%s\n' "$names" | grep -v "^VideoLib\(/\|\$\)" || true)"
+          if [ -n "$stray" ]; then
+            echo "整包顶层应只有 VideoLib/，实际出现：$stray" >&2
+            exit 1
+          fi
+
+          names="$(unzip -Z1 "$comp" 2>/dev/null ||
+            python3 -c 'import zipfile,sys;print("\n".join(zipfile.ZipFile(sys.argv[1]).namelist()))' "$comp")"
+          stray="$(printf '%s\n' "$names" | grep -v "^scraper\(/\|\$\)" || true)"
+          if [ -n "$stray" ]; then
+            echo "组件包顶层应只有 scraper/，实际出现：$stray" >&2
+            exit 1
+          fi
+
+      # 瘦身靠 pyinstaller.spec 里的两处过滤（见 docs/size-reduction-plan.md §2）：
+      # 剔除 selenium-manager 三份二进制与 optimize=2。前者是 PyInstaller 的 hook
+      # 收集进来的，升级 PyInstaller 就可能悄悄装回来 —— 那时构建全绿、代码没改，
+      # 只有产物体积回涨 12MB。钉在这里，比等用户发现包里多了东西早。
+      - name: 断言瘦身生效
+        shell: bash
+        run: |
+          stray="$(find python/build/pyi/dist/scraper -name 'selenium-manager*')"
+          if [ -n "$stray" ]; then
+            echo "产物里出现 selenium-manager（12.4MB 无用二进制），过滤失效了：" >&2
+            echo "$stray" >&2
+            exit 1
+          fi
+
+      # 标准包与整包在一次 --full 构建里一起产出（标准包就是「拷组件之前的那棵树」），
+      # 这里只断言它确实不含 tools/：默认下载项悄悄回涨 30MB 时，没有任何一步会失败。
+      - name: 断言标准包
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          suffix="${{ matrix.goos }}_${{ matrix.goarch }}"
+          lite="dist/release/videolib_${version}_${suffix}.zip"
+          test -f "$lite" || { echo "缺少标准包：$lite"; ls -l dist/release; exit 1; }
+
+          names="$(unzip -Z1 "$lite" 2>/dev/null ||
+            python3 -c 'import zipfile,sys;print("\n".join(zipfile.ZipFile(sys.argv[1]).namelist()))' "$lite")"
+          stray="$(printf '%s\n' "$names" | grep -v "^VideoLib\(/\|\$\)" || true)"
+          if [ -n "$stray" ]; then
+            echo "标准包顶层应只有 VideoLib/，实际出现：$stray" >&2
+            exit 1
+          fi
+          if printf '%s\n' "$names" | grep -q '^VideoLib/tools/'; then
+            echo "标准包里出现了 VideoLib/tools/" >&2
+            exit 1
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: videolib-${{ matrix.goos }}-${{ matrix.goarch }}
+          # zip 与产物自述给 release job 汇总；SHA256SUMS.txt 在 release job
+          # 跨平台统一生成一次，每个 job 各传一份同名文件会在合并时互相覆盖。
+          path: |
+            dist/release/*.zip
+            dist/release/scraper_meta_*.json
+          if-no-files-found: error
+
+  # 三个平台包齐了再发 Release。workflow_dispatch 冒烟只构建、不发布，
+  # 避免测试 run 污染 Releases 页。
+  release:
+    name: Publish release
+    needs: [build-app]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      # 生成清单要走 go/cmd/manifestgen，需要源码与 Go 工具链。
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go/go.mod
+          cache: false
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: 收集 Release 资产
+        run: |
+          set -euo pipefail
+          # 用「临时数组 + while read」而不是 mapfile：后者把脚本锁死在 bash 4+，
+          # 本地（macOS 自带 3.2）就没法原样跑一遍，而发布脚本最需要本地预演。
+          collect() {
+            local -a out=()
+            while IFS= read -r file; do out+=("$file"); done < <(find release-assets -type f "$@" | sort)
+            printf '%s\n' "${out[@]}"
+          }
+
+          # 轻量与整包分开匹配：两者文件名只差一个 _full_，用同一个模式会把
+          # 整包算进轻量包 —— 数量对得上，而「默认下载项」可能是 40MB 的整包。
+          lite=()
+          while IFS= read -r file; do lite+=("$file"); done < <(collect \
+            \( -name 'videolib_*_windows_amd64.zip' -o \
+               -name 'videolib_*_darwin_arm64.zip' -o \
+               -name 'videolib_*_darwin_amd64.zip' \) ! -name '*_full_*')
+          full=()
+          while IFS= read -r file; do full+=("$file"); done < <(collect \
+            \( -name 'videolib_*_full_windows_amd64.zip' -o \
+               -name 'videolib_*_full_darwin_arm64.zip' -o \
+               -name 'videolib_*_full_darwin_amd64.zip' \))
+          # 组件包与它的自述文件。自述由构建阶段写入（scraper version 的原样输出），
+          # 清单里的版本与协议因此来自产物本身，不来自 CI 手里的变量。
+          components=()
+          while IFS= read -r file; do components+=("$file"); done < <(collect -name 'scraper_*.zip')
+          metas=()
+          while IFS= read -r file; do metas+=("$file"); done < <(collect -name 'scraper_meta_*.json')
+
+          failed=0
+          check() {
+            if [[ "$2" -ne "$3" ]]; then
+              echo "$1 应有 $3 个，实际 $2 个" >&2
+              failed=1
+            fi
+          }
+          check "轻量包" "${#lite[@]}" 3
+          check "整包" "${#full[@]}" 3
+          check "组件包" "${#components[@]}" 3
+          check "组件自述" "${#metas[@]}" 3
+          if [[ "$failed" -ne 0 ]]; then
+            find release-assets -type f >&2
+            exit 1
+          fi
+
+          mkdir -p release-pkg
+          cp "${lite[@]}" "${full[@]}" "${components[@]}" "${metas[@]}" release-pkg/
+
+      - name: 生成组件清单
+        run: |
+          set -euo pipefail
+          # 生成器会用 App 的解析路径与 Spec 校验把结果读一遍，读不懂就失败 ——
+          # 清单挂上 Release 之后才发现格式问题，代价是用户那边「刮削器装不上」。
+          ( cd go && go run ./cmd/manifestgen \
+              -dir ../release-pkg \
+              -base-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}" \
+              -require "windows/amd64,darwin/arm64,darwin/amd64" \
+              -out ../release-pkg/manifest.json )
+
+          # 自述文件只是这一段的输入，不发布：清单里已有同样的信息。它们仍留在
+          # artifact 里，需要时能从 Actions 取。
+          rm -f release-pkg/scraper_meta_*.json
+          ls -l release-pkg
+
+      - name: 生成校验和
+        run: |
+          set -euo pipefail
+          (
+            cd release-pkg
+            # manifest.json 也纳入校验和。SHA256SUMS.txt 自身不纳入。
+            # 用 ls + grep 而不是 find -printf：后者是 GNU 扩展，换 macOS runner
+            # 或本地复跑就会报 unknown predicate。
+            LC_ALL=C ls -1 | grep -vx 'SHA256SUMS.txt' | sort | xargs sha256sum > SHA256SUMS.txt
+            echo "SHA256SUMS:"
+            cat SHA256SUMS.txt
+          )
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(release-pkg/*)
+          # 3 个标准包 + 3 个整包 + 3 个组件包 + manifest.json + SHA256SUMS.txt。
+          # 数量写死是有意的：将来加 ffprobe 组件时这里会失败，逼着人回来确认
+          # 新资产确实该发，而不是无声地多发一个包。
+          expected=11
+          if [[ "${#assets[@]}" -ne "$expected" ]]; then
+            echo "expected $expected assets, got ${#assets[@]}:" >&2
+            printf '  %s\n' "${assets[@]}" >&2
+            exit 1
+          fi
+          for asset in "${assets[@]}"; do
+            basename "$asset"
+          done
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+              --title "videolib $GITHUB_REF_NAME" \
+              --generate-notes
+          fi

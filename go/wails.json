@@ -1,9 +1,9 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "videolib",
+  "name": "VideoLib",
   "outputfilename": "VideoLib",
   "frontend:dir": "frontend",
-  "frontend:install": "npm install",
+  "frontend:install": "npm ci",
   "frontend:build": "npm run build",
   "author": {
     "name": "videolib"

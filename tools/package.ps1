@@ -1,74 +1,163 @@
-# 组装最终分发目录，对应 docs/architecture.md §9.3 的结构。
+# 组装分发目录并生成发布归档（Windows 侧）。
 #
-# 用法
-#   tools\package.ps1                轻量包：不含 tools\scraper（默认）
-#   tools\package.ps1 -Full          整包：含 tools\scraper，离线机器用
-#   tools\package.ps1 -NoScraper     同上「轻量包」，显式声明（保留给旧脚本）
+# 与 tools/package.sh 同责、同产物、同参数语义：
+#   tools\package.ps1                标准包
+#   tools\package.ps1 -Full          整包（模板 B 带 tools\ 组件）
+#   tools\package.ps1 -LegacyFlat    额外产出旧扁平布局，仅供升级回归
+#   tools\package.ps1 -Version 1.2.3 覆盖版本号
 #
-# 为什么默认是轻量包：刮削器 31MB，占分发目录 65%，而绝大多数用户第一次打开
-# App 只是看视频。改为首次刮削时按需下载后，安装包从 37MB 降到 10MB，见
-# docs/size-reduction-plan.md。
+# 产物：
+#   dist\<PRODUCT>\                              分发目录（运行时的路径契约）
+#   dist\release\<SLUG>_<ver>_<os>_<arch>.zip
+#   dist\release\<SLUG>_<ver>_full_<os>_<arch>.zip
+#   dist\release\SHA256SUMS.txt
 #
-# 前两件事必须已经做完（通常由 CI 内联步骤完成）：
-#   PyInstaller 产出 scraper 并放到 tools\bin\scraper（仅 -Full 需要）
-#   wails build 产出 go\build\bin\VideoLib.exe
-#
-# 产物：dist\VideoLib\
+# Windows 上不用 zip 命令（Git for Windows 不带），压缩走 Compress-Archive；
+# 它与 macOS 的 `zip -qry` 的差异只有一处：符号链接会被解引用，而 Windows 产物
+# 里没有符号链接，所以不影响。
+[CmdletBinding()]
 param(
     [switch]$Full,
-    [switch]$NoScraper
+    [switch]$LegacyFlat,
+    [string]$Version = ''
 )
-$ErrorActionPreference = "Stop"
 
-if ($Full -and $NoScraper) {
-    throw "-Full 与 -NoScraper 不能同时使用"
+$ErrorActionPreference = 'Stop'
+
+$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$Config = @{}
+Get-Content (Join-Path $PSScriptRoot 'config.env') | ForEach-Object {
+    $line = $_.Trim()
+    if ($line -eq '' -or $line.StartsWith('#')) { return }
+    $i = $line.IndexOf('=')
+    if ($i -lt 1) { return }
+    $Config[$line.Substring(0, $i).Trim()] = $line.Substring($i + 1).Trim()
 }
-# 默认轻量；-Full 才带刮削器。-NoScraper 与默认等价，保留是为了让调用方
-# 显式声明意图 —— 将来默认值若再变，写死参数的脚本行为不会跟着变。
-$wantScraper = [bool]$Full
+$Slug = $Config['SLUG']
+$Product = $Config['PRODUCT']
+$Exe = $Config['EXE']
+$HasPython = $Config['HAS_PYTHON']
+$PyComponent = $Config['PY_COMPONENT']
+$PyBuildName = $Config['PY_BUILD_NAME']
+$Components = @($Config['COMPONENTS'] -split '\s+' | Where-Object { $_ })
+$Bundled = @($Config['BUNDLED'] -split '\s+' | Where-Object { $_ })
 
-$repo = Split-Path -Parent $PSScriptRoot
-$dist = Join-Path $repo "dist\VideoLib"
+function Die([string]$Text) { throw $Text }
+function Step([string]$Text) { Write-Host ''; Write-Host "==> $Text" -ForegroundColor Cyan }
+function Note([string]$Text) { Write-Host "    $Text" }
 
-$appExe = Join-Path $repo "go\build\bin\VideoLib.exe"
-$scraper = Join-Path $repo "tools\bin\scraper"
-
-if (-not (Test-Path $appExe)) {
-    throw "未找到 $appExe，请先运行 wails build -platform windows/amd64"
-}
-if ($wantScraper -and -not (Test-Path $scraper)) {
-    throw "未找到 $scraper，请先把 PyInstaller 产物放到 tools\bin\scraper（默认的轻量包不需要它）"
-}
-
-if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
-New-Item -ItemType Directory -Path (Join-Path $dist "tools") -Force | Out-Null
-
-Copy-Item $appExe $dist
-
-# 刮削器保持 onedir 结构整体拷贝。不要试图把它塞进 App 可执行文件里：
-# 那样不仅要解压到临时目录（重新引入 onefile 的驱动重复下载问题），
-# 也没法单独更新或排查。
-#
-# 目标目录先显式建出来，再拷「源目录的内容」进去，而不是把源目录拷到目标路径上。
-# 后者在目标不存在与已存在两种情况下的落点不同（是「成为源目录的副本」还是
-# 「源目录整个被塞进去」），差出一层目录 —— 而 Go 侧按固定路径找刮削器
-# （见 go/internal/toolpath），差一层就等于找不到。
-# 要的就是 dist\tools\scraper\{scraper.exe,_internal\}，与
-# docs/architecture.md §9.3 一致。
-if ($wantScraper) {
-    $scraperDest = Join-Path $dist "tools\scraper"
-    New-Item -ItemType Directory -Path $scraperDest -Force | Out-Null
-    Copy-Item (Join-Path $scraper "*") $scraperDest -Recurse
-} else {
-    Write-Host "轻量包：不含 tools\scraper，首次刮削时由 App 按需下载"
+if (-not $Version) {
+    if ($env:VERSION) {
+        $Version = $env:VERSION -replace '^v', ''
+    }
+    else {
+        $tag = (git -C $Root describe --tags --exact-match 2>$null)
+        $Version = if ($tag) { $tag -replace '^v', '' } else { '0.0.0-dev' }
+    }
 }
 
-$ffprobe = Join-Path $repo "tools\bin\ffprobe.exe"
-if (Test-Path $ffprobe) {
-    Copy-Item $ffprobe (Join-Path $dist "tools\ffprobe.exe")
-} else {
-    Write-Warning "未找到 tools\bin\ffprobe.exe —— 视频时长与编码信息将不可用，其余功能不受影响"
+$Dist = Join-Path $Root 'dist'
+$Stage = Join-Path $Dist $Product
+$Rel = Join-Path $Dist 'release'
+$Bin = Join-Path $Root 'go\build\bin'
+
+Step "组装分发目录（$Product $Version windows/amd64）"
+
+if (Test-Path $Stage) { Remove-Item -Recurse -Force $Stage }
+New-Item -ItemType Directory -Path $Stage -Force | Out-Null
+
+$appExe = Join-Path $Bin "$Exe.exe"
+if (-not (Test-Path $appExe)) { Die "未找到 $appExe，请先运行 tools\build.ps1（或 wails build）" }
+Copy-Item $appExe $Stage
+Note "App：$Exe.exe"
+
+function Get-ComponentSource([string]$Name) {
+    if ($PyComponent -and $Name -eq $PyComponent) {
+        return (Join-Path $Root "python\build\pyi\dist\$PyBuildName")
+    }
+    return (Join-Path $Root "third_party\$Name\windows-amd64")
 }
 
-Write-Host "分发目录已生成：$dist"
-Get-ChildItem $dist -Recurse -Depth 1 | Select-Object -First 20 FullName
+function Copy-Component([string]$Name) {
+    $src = Get-ComponentSource $Name
+    if (-not (Test-Path $src)) { Die "组件 $Name 的产物不存在：$src" }
+    $dest = Join-Path $Stage "tools\$Name"
+    New-Item -ItemType Directory -Path $dest -Force | Out-Null
+    Copy-Item (Join-Path $src '*') $dest -Recurse -Force
+    Note "组件：tools\$Name\"
+}
+
+if ($Full) {
+    if ($HasPython -ne '1') { Note '模板 A 无组件，-Full 与标准包等价' }
+    foreach ($c in $Components) { Copy-Component $c }
+    foreach ($c in $Bundled) {
+        if (Test-Path (Get-ComponentSource $c)) { Copy-Component $c }
+        else { Note "缺少 ${c}—— 相关功能降级，其余不受影响" }
+    }
+}
+else {
+    Note '标准包：不含 tools\ 组件，首次使用时按需下载'
+}
+
+New-Item -ItemType Directory -Path $Rel -Force | Out-Null
+$suffix = 'windows_amd64'
+if ($Full -and $HasPython -eq '1') {
+    $asset = Join-Path $Rel "${Slug}_${Version}_full_${suffix}.zip"
+}
+else {
+    $asset = Join-Path $Rel "${Slug}_${Version}_${suffix}.zip"
+}
+if (Test-Path $asset) { Remove-Item -Force $asset }
+
+Step "生成归档 $(Split-Path -Leaf $asset)"
+if ($HasPython -eq '1') {
+    # 模板 B：顶层是唯一目录 <PRODUCT>\，标准包与整包只差 tools\ 有没有。
+    Compress-Archive -Path $Stage -DestinationPath $asset -Force
+    $expect = $Product
+}
+else {
+    # 模板 A：zip 根就是可执行文件，解压即用。
+    Compress-Archive -Path (Join-Path $Stage "$Exe.exe") -DestinationPath $asset -Force
+    $expect = "$Exe.exe"
+}
+
+$zip = [System.IO.Compression.ZipFile]::OpenRead($asset)
+try {
+    $names = @($zip.Entries | ForEach-Object { $_.FullName -replace '\\', '/' })
+    $stray = @($names | Where-Object { -not ($_ -eq $expect -or $_.StartsWith("$expect/")) })
+    if ($stray.Count -gt 0) {
+        Die "$(Split-Path -Leaf $asset) 顶层应为 $expect，实际出现：$($stray[0])"
+    }
+    Write-Host "    归档结构：$($names.Count) 个条目，全部在 $expect 下"
+}
+finally { $zip.Dispose() }
+
+if ($LegacyFlat) {
+    if ($HasPython -ne '1') {
+        Note '-LegacyFlat：模板 A 的归档本来就是扁平布局，跳过'
+    }
+    else {
+        $legacy = Join-Path $Dist "legacy\$Product"
+        if (Test-Path (Join-Path $Dist 'legacy')) { Remove-Item -Recurse -Force (Join-Path $Dist 'legacy') }
+        New-Item -ItemType Directory -Path $legacy -Force | Out-Null
+        Copy-Item (Join-Path $Stage "$Exe.exe") $legacy
+        foreach ($c in ($Components + $Bundled)) {
+            $p = Join-Path $Stage "tools\$c"
+            if (Test-Path $p) { Copy-Item (Join-Path $p '*') $legacy -Recurse -Force }
+        }
+        Note "旧扁平布局：dist\legacy\$Product（不发布，只用于验证老用户升级）"
+    }
+}
+
+Step '生成 SHA256SUMS.txt'
+$sumPath = Join-Path $Rel 'SHA256SUMS.txt'
+if (Test-Path $sumPath) { Remove-Item -Force $sumPath }
+Get-ChildItem $Rel -Filter '*.zip' | Sort-Object Name | ForEach-Object {
+    $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+    "$hash  $($_.Name)" | Add-Content -Path $sumPath -Encoding ascii
+}
+Get-Content $sumPath
+
+Step '完成'
+Note "分发目录：$Stage"
+Note "归档目录：$Rel"

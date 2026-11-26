@@ -103,9 +103,12 @@ func (p *Prober) Probe(ctx context.Context, videoPath string) (MediaInfo, error)
 // 显式配置若指向不存在/不可执行的文件，按不可用处理并继续探测，同时记日志。
 //
 // 随包分发的那份要优先于 PATH，否则结果会随用户装了哪个版本的 ffmpeg 而变。
-// 两种布局都要认：分发布局是 <App>/tools/ffprobe.exe，开发布局是
-// <repo>/tools/bin/ffprobe.exe。只认后者时，打包产物一律找不到 ffprobe ——
-// 而这只会表现为「时长与编码不显示」，不会报任何错，所以特别容易漏。
+// 两种布局都要认：分发布局是 <App>/tools/ffprobe/ffprobe.exe，开发布局是
+// <repo>/dist/VideoLib/tools/ffprobe/ffprobe.exe。只认后者时，打包产物一律
+// 找不到 ffprobe —— 而这只会表现为「时长与编码不显示」，不会报任何错，所以
+// 特别容易漏。
+//
+// 组件一律进同名子目录：即使 ffprobe 只有一个文件，也放在 tools/ffprobe/ 下。
 //
 // 相对当前工作目录那一档予以保留：部分开发流程直接从仓库根启动进程。
 // 它排在可执行文件之后，因为由快捷方式启动的 App 工作目录并不是安装目录。
@@ -138,8 +141,8 @@ func LocateWith(configured string, preferred ...string) string {
 	name := toolpath.Name("ffprobe")
 
 	for _, rel := range [][]string{
-		{"tools", name},
-		{"tools", "bin", name},
+		{"tools", "ffprobe", name},
+		toolpath.DevRel("tools", "ffprobe", name),
 	} {
 		if found := toolpath.Find(rel...); found != "" {
 			return found
@@ -147,8 +150,10 @@ func LocateWith(configured string, preferred ...string) string {
 	}
 
 	candidates := []string{
-		filepath.Join("tools", name),
-		filepath.Join("tools", "bin", name),
+		// CWD 是分发目录（从 dist/VideoLib 里直接启动）
+		filepath.Join("tools", "ffprobe", name),
+		// CWD 是仓库根（开发时直接从仓库根启动进程）
+		filepath.Join(append([]string{"dist", toolpath.ProductDir}, "tools", "ffprobe", name)...),
 	}
 	for _, candidate := range candidates {
 		if abs, err := filepath.Abs(candidate); err == nil {

@@ -160,8 +160,9 @@ VIDEOLIB_DATA_DIR=../.probe/sandbox uv run scraper doctor
 ## 打包
 
 ```bash
-uv run pyinstaller scraper.spec --noconfirm
+uv run pyinstaller packaging/pyinstaller.spec --noconfirm \
+    --distpath build/pyi/dist --workpath build/pyi/work
 ```
 
-产物为 `dist/scraper/`（**onedir，不是 onefile**）。onefile 会让驱动目录每次落在
+产物为 `build/pyi/dist/scraper/`（**onedir，不是 onefile**）。onefile 会让驱动目录每次落在
 新的临时路径，且极易被杀软误报。详见 `docs/architecture.md` §9.1。

@@ -31,7 +31,7 @@
 
 ## 2. 第一档：PyInstaller 收紧（已落地）
 
-改动只有 `python/scraper.spec` 一个文件，共两处。以下每条都实测过。
+改动只有 `python/packaging/pyinstaller.spec` 一个文件，共两处。以下每条都实测过。
 
 ### 2.1 主因：三份从未被调用的 selenium-manager（−12.4 MB）
 
@@ -65,7 +65,7 @@ def _drop_selenium_manager(entries):
     for entry in entries:
         dest = entry[0].replace("\\", "/")
         if all(marker in dest for marker in _MANAGER_MARKERS):
-            print(f"[scraper.spec] 剔除 {dest}")
+            print(f"[pyinstaller.spec] 剔除 {dest}")
             continue
         kept.append(entry)
     return kept
@@ -111,10 +111,10 @@ a.datas = _drop_selenium_manager(a.datas)
 理由是 `doctor` 只覆盖到导入完整性，不构造 `SB()` 会话。若这一步失败，先回退
 `_OPTIMIZE`，再回退 `_drop_selenium_manager`。
 
-CI 断言已落地（`build-windows` 与 `build-macos` 各一步「断言瘦身生效」）：
+CI 断言已落地（`build-app` 的「断言瘦身生效」一步）：
 
 ```bash
-stray="$(find python/dist/scraper -name 'selenium-manager*')"
+stray="$(find python/build/pyi/dist/scraper -name 'selenium-manager*')"
 if [ -n "$stray" ]; then echo "产物里出现 selenium-manager" >&2; exit 1; fi
 ```
 
@@ -134,12 +134,12 @@ if [ -n "$stray" ]; then echo "产物里出现 selenium-manager" >&2; exit 1; fi
 
 ```
 Release v0.6.0
-├── VideoLib_0.6.0_macos_arm64.tar.gz      # 只含 App，10 MB  ← 默认下载
-├── VideoLib_0.6.0_windows_amd64.zip       # 同上
-├── scraper_0.4.3_macos_arm64.zip          # 20 MB，首次刮削时按需
+├── videolib_0.6.0_darwin_arm64.zip      # 只含 App，10 MB  ← 默认下载
+├── videolib_0.6.0_windows_amd64.zip       # 同上
+├── scraper_0.4.3_darwin_arm64.zip          # 20 MB，首次刮削时按需
 ├── scraper_0.4.3_windows_amd64.zip
 ├── manifest.json                          # 版本/大小/sha256/URL
-└── VideoLib_0.6.0_full_windows_amd64.zip  # 整包，离线/内网用户
+└── videolib_0.6.0_full_windows_amd64.zip  # 整包，离线/内网用户
 ```
 
 `scraper` 用**独立版本号**，与 App 解耦：改 App 不用重下 20 MB 的刮削器。
@@ -268,7 +268,7 @@ func (m *Manager) Verify(name string) error        // 逐文件核对，供诊�
 `resolveScraperPath` 已移过去），顺序：
 
 ```
-显式配置 → 按需组件（installed.json 指向的版本目录）→ 随包 tools/scraper → 开发 tools/bin → PATH
+显式配置 → 按需组件（installed.json 指向的版本目录）→ 随包 tools/scraper → 开发 dist/VideoLib/tools/scraper → PATH
 ```
 
 放在「随包」之前，是因为用户装了更新的组件版本时不该被旧的内置副本压过。
@@ -391,10 +391,10 @@ ffprobe 走同一套：`probe.LocateWith(configured, componentPath...)`。
 
 ## 4. 落地顺序
 
-1. **第一档**（已完成）：`python/scraper.spec` 两处改动 + 一次真实刮削确认。
+1. **第一档**（已完成）：`python/packaging/pyinstaller.spec` 两处改动 + 一次真实刮削确认。
    > 仍待你在真实站点跑一次完整刮削验证：`optimize=2` 的回退开关在
-   > `scraper.spec` 顶部的 ②。
-2. **CI 断言**（已完成）：`find python/dist/scraper -name 'selenium-manager*'`
+   > `packaging/pyinstaller.spec` 顶部的 ②。
+2. **CI 断言**（已完成）：`find python/build/pyi/dist/scraper -name 'selenium-manager*'`
    有结果即失败，防止 PyInstaller 升级回潮。
 3. **组件骨架**（已完成）：`internal/component`，含清单拉取与内置兜底。
 4. **CI 拆资产 + manifest**（已完成）：见 §3.6。

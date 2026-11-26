@@ -556,10 +556,10 @@ func (a *App) resolveScraperPath() string {
 //
 // 两种布局都要认，且分发布局必须排在开发布局之前：
 //
-//	分发  <App>/tools/scraper/scraper.exe   ← tools/package.ps1 产出
-//	开发  <repo>/tools/bin/scraper/scraper.exe
+//	分发  <App>/tools/scraper/scraper.exe            ← tools/package.* 产出
+//	开发  <repo>/dist/VideoLib/tools/scraper/scraper ← tools/build.* 组装后
 //
-// 只认开发布局是曾经的 bug：开发期仓库里恰好有 tools/bin/，一切正常，
+// 只认开发布局是曾经的 bug：开发期仓库里恰好有一份可用产物，一切正常，
 // 而 user 装好分发包后必然找不到刮削器，且报错完全指不到目录层级上。
 //
 // 组件排在随包之前：用户装过新版组件时，旧的内置副本不该压过它。整包用户
@@ -573,14 +573,14 @@ func (a *App) resolveScraperLocked() (path, source string) {
 	}
 
 	name := toolpath.Name("scraper")
-	// 分发布局优先于开发布局：正式分发物里不该出现 tools/bin/，
+	// 分发布局优先于开发布局：正式分发物里不该出现 dist/ 那套仓库结构，
 	// 万一出现也说明那是残留，不该压过随包分发的正本。
 	for _, candidate := range []struct {
 		rel    []string
 		source string
 	}{
 		{[]string{"tools", "scraper", name}, "bundled"},
-		{[]string{"tools", "bin", "scraper", name}, "dev"},
+		{toolpath.DevRel("tools", "scraper", name), "dev"},
 	} {
 		if found := toolpath.Find(candidate.rel...); found != "" {
 			return found, candidate.source

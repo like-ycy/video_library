@@ -11,10 +11,11 @@ onefile 每次启动都把载荷解压到一个新的临时目录。seleniumbase
 构建：
     cd python
     uv add --dev pyinstaller          # 首次
-    uv run pyinstaller scraper.spec --noconfirm
+    uv run pyinstaller packaging/pyinstaller.spec --noconfirm \
+        --distpath build/pyi/dist --workpath build/pyi/work
 
 产物：
-    dist/scraper/scraper.exe 与同级 _internal/
+    build/pyi/dist/scraper/scraper.exe 与同级 _internal/
 
 注意
 ----
@@ -41,6 +42,7 @@ Chrome 浏览器本身无法打包，目标机必须已安装。这一点由 `sc
    收窄 `hiddenimports`（seleniumbase 大量动态导入，收益不足 1MB，风险不成比例）。
 """
 
+import os
 import sys
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
@@ -85,7 +87,12 @@ hiddenimports = collect_submodules("seleniumbase")
 # 报出的 driver.dir 应当指向用户数据目录，而不是产物内部的 _internal/ 路径。
 
 a = Analysis(  # noqa: F821
-    ["scraper_main.py"],
+    # spec 已挪到 packaging/，入口脚本与它同级；写相对路径会按 CWD（python/）
+    # 去解析，指到不存在的 python/entry.py。SPECPATH 是 PyInstaller 注入的
+    # spec 所在目录。
+    [os.path.join(SPECPATH, "entry.py")],  # noqa: F821
+    # pathex 相对 CWD 解析；tools/build.sh 与 build.ps1 都在 python/ 下调用
+    # pyinstaller，所以 "src" 就是 python/src。
     pathex=["src"],
     binaries=[],
     datas=datas,
@@ -111,7 +118,7 @@ def _drop_selenium_manager(entries):
     for entry in entries:
         dest = entry[0].replace("\\", "/")
         if all(marker in dest for marker in _MANAGER_MARKERS):
-            print(f"[scraper.spec] 剔除 {dest}")
+            print(f"[pyinstaller.spec] 剔除 {dest}")
             continue
         kept.append(entry)
     return kept

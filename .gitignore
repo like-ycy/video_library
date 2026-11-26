@@ -1,104 +1,83 @@
-# ════════════════════════════════════════════════════════════
-#  video_library
+# 仓库结构与打包契约见 docs/packaging-contract.md
 #
-#  原则：只提交「源码 + 配置 + 锁文件 + Wails 脚手架」。
-#  所有可再生成的产物（依赖目录、构建输出、缓存、日志）一律忽略。
-#
-#  下面带前导 / 的规则都是**仓库根锚定**的 —— 这点很关键：
-#  裸写 build/ 会连 go/build/ 一起忽略，而 go/build/ 里的
-#  appicon.png、windows/、darwin/ 是 wails build 必需的脚手架，
-#  必须进版本库。所以这里全部写成 /python/build/ 这样的绝对形式。
-# ════════════════════════════════════════════════════════════
+# 原则：只提交「源码 + 配置 + 锁文件 + Wails 脚手架」。
+# 带前导 / 的规则都是仓库根锚定的，这是刻意的：裸写 build/ 会连 go/build/ 一起忽略，
+# 而 go/build/ 里的 appicon.png、darwin/、windows/ 是 wails build 必需的源文件。
+# 四个仓库共用同一份规则，仅有末尾「项目特有」一节不同。
 
+# ── Go / Wails ──
+/go/build/bin/
+/go/frontend/wailsjs/
+/go/frontend/dist/
+/go/frontend/node_modules/
+/go/frontend/package.json.md5
+/go/.gocache-test/
+vendor/
 
-# ── Python：字节码与编译产物 ──
+# ── Python（模板 B）──
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 *.egg-info/
-
-# ── Python：虚拟环境（uv sync 生成，约 90 MB） ──
-/python/.venv/
-venv/
 .venv/
-
-# ── Python：PyInstaller 产物与中间目录（见 python/scraper.spec） ──
-# dist/scraper/ 是 onedir 产物（必须整体含 _internal/），体积上百 MB，
-# 且只在 Windows 上构建，绝不入库。
+/python/.venv/
+# PyInstaller 的 work 与 dist 都在这层：python/build/pyi/{work,dist}。
 /python/build/
-/python/dist/
-*.spec.bak
 
-# ── Python：工具缓存 ──
+# ── 测试与工具缓存 ──
 .pytest_cache/
 .ruff_cache/
-
-# ── 测试用仓库内临时目录（见 python/tests/conftest.py） ──
+# 测试用仓库内临时目录（见 python/tests/conftest.py）
 /python/tests/.tmp/
 
-# ── 本地探针输出（见 python/.probe/） ──
-/python/.probe/
-
-
-# ── Go / Wails ──
-# wailsjs/ 由 `wails build` / `wails generate module` 自动生成，
-# 每次构建都会重写，不入库。
-/go/frontend/wailsjs/
-
-# Vite 构建产物与 npm 依赖：均可由 package-lock 重建，不入库。
-/go/frontend/dist/
-/go/frontend/node_modules/
-/go/frontend/package.json.md5
-
-# wails build 的可执行产物。注意只忽略 bin/：
-# 同级的 appicon.png、darwin/Info.plist、windows/* 是构建必需的源文件。
-/go/build/bin/
-
-# Go 测试用的仓库内临时目录
-/go/.gocache-test/
-
-# 依赖一律走 go.mod + go.sum，不 vendor
-/vendor/
-
-
-# ── 运行时依赖与分发产物（由 tools/*.sh | *.ps1 放入） ──
-# ffprobe、打包后的 scraper 属分发产物，不入库。
-/tools/bin/*
-!/tools/bin/.gitkeep
-
+# ── 组件与分发产物（tools/*.sh 的输出）──
 /dist/
 /work/
 
+# ── third_party（模板 B）──
+# 预置第三方二进制（ffprobe/<os>-<arch>/）属于要提交的分发内容，不要忽略；
+# 构建时由 tools/package.* 拷进 dist/<PRODUCT>/tools/<组件>/。
 
-# ── IDE / OS ──
+# ── 运行时数据 ──
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.log
+reports/
+
+# ── OS / 编辑器 / 本地工具 ──
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
 *.swp
 *.swo
-
-
-# ── 本地配置与数据 ──
-# SQLite 索引是可随时重建的派生数据，见 docs/architecture.md。
-*.db
-*.db-journal
-*.db-wal
-*.db-shm
-.env
-.env.local
-
-
-# ── 日志 ──
-*.log
-
-# ── 本地测试与工具 ──
-**/*_test.go
-testdata/
+*~
 .serena/
 .workbuddy/
+
+# ── 项目特有 ──
+# 旧布局残留在仓库根的可执行文件与归档（新产物一律进 dist/）
+/*.exe
+/*.zip
+# 刮削器运行期落地的数据：日志归档、下载缓冲
+archived_files/
+archived_logs/
+latest_logs/
+downloaded_files/
+# 本地探针输出（python/.probe/）
+/python/.probe/
+# 测试文件与本地样本不入库（从仓库克隆后 go test 显示 no test files 属预期）
+**/*_test.go
 python/tests/
-downloaded_files
+testdata/
+# 本地配置与设计稿
+.env
+.env.local
 .agents/
 design-system/

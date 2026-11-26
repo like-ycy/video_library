@@ -4,19 +4,22 @@
 // ----------------------
 // 同一个工具在两种布局下位置不同，而两种布局都真实存在：
 //
-//	分发布局（tools/package.ps1 产出，见 docs/architecture.md §9.3）
+//	分发布局（tools/package.* 产出，见 docs/packaging-contract.md §4）
 //	    <App>/VideoLib.exe
 //	    <App>/tools/scraper/scraper.exe
-//	    <App>/tools/ffprobe.exe
+//	    <App>/tools/ffprobe/ffprobe.exe
 //
-//	开发布局（tools/build.sh 产出）
-//	    <repo>/tools/bin/scraper/scraper.exe
-//	    <repo>/tools/bin/ffprobe.exe
+//	开发布局（tools/build.* 组装 dist/<PRODUCT> 后从那里运行）
+//	    <repo>/dist/VideoLib/tools/scraper/scraper.exe
+//	    <repo>/dist/VideoLib/tools/ffprobe/ffprobe.exe
 //
 // 只认其中一种，另一种就会静默失效。而「静默」才是要害：找不到时调用方退到
 // PATH、再退到空路径，对外表现为「未找到刮削器组件」或「时长字段不显示」，
-// 现场看不出跟目录层级有任何关系。开发期仓库里恰好有 tools/bin/，一切正常，
-// 打包之后才发现 —— 所以这里两种都覆盖，且这段判断只留这一个副本。
+// 现场看不出跟目录层级有任何关系。开发期仓库里恰好有一份可用的 dist/，一切
+// 正常，打包之后才发现 —— 所以这里两种都覆盖，且这段判断只留这一个副本。
+//
+// 组件一律进同名子目录（tools/<c>/<exe>），即使只有一个文件：运行时契约要求
+// 目录形态统一，ffprobe 也因此从 tools/ffprobe 变成 tools/ffprobe/ffprobe。
 //
 // 为什么从可执行文件出发、逐层向上，而不是相对当前工作目录
 // ------------------------------------------------------
@@ -24,8 +27,9 @@
 // 不是安装目录。相对路径在这种启动方式下必然落空。可执行文件的位置才是
 // 可靠锚点。
 //
-// 向上走几层，是为了同时覆盖两种深度：分发布局里 tools/ 是 exe 的同级目录
-// （第 1 层就命中），开发布局里 exe 在 go/build/bin/，仓库根在上三层。
+// 向上走几层，是为了同时覆盖两种深度：分发布局里 tools/ 在 .app 的同级
+// （macOS 从 Contents/MacOS 向上 3 层），开发布局里 exe 在
+// go/build/bin/*.app/Contents/MacOS，仓库根在上 6 层。
 package toolpath
 
 import (
@@ -33,11 +37,24 @@ import (
 	"path/filepath"
 )
 
+// ProductDir 是分发目录名，等于 tools/config.env 的 PRODUCT 与 wails.json 的 name。
+//
+// 开发布局下组件不在 <App> 旁边，而在 <repo>/dist/<ProductDir>/tools/：
+// tools/build.sh 每次都把整包装配到 dist/<ProductDir>，App 也从那里运行。
+const ProductDir = "VideoLib"
+
 // maxLevels 是从可执行文件目录向上试探的层数（含自身）。
 //
-// 4 层刚好覆盖开发布局：go/build/bin → go/build → go → <repo>。
-// 再多走只会增加命中无关同名文件的机会，没有收益。
-const maxLevels = 4
+// 8 层是为了覆盖 macOS 开发布局：
+//
+//	go/build/bin/VideoLib.app/Contents/MacOS → Contents → .app → bin →
+//	build → go → <repo>
+//
+// 从 MacOS 目录到仓库根要走 6 层，之后还要在 <repo>/dist/VideoLib/tools/...
+// 上命中候选。Windows 开发布局（go/build/bin/VideoLib.exe）只需 3 层，
+// 分发布局（.app/Contents/MacOS）只需 3 层。再多走没有收益，只会增加命中
+// 无关同名文件的机会。
+const maxLevels = 8
 
 // Find 在标准位置查找文件。rel 是相对于每一层根目录的路径片段。
 //
@@ -52,6 +69,14 @@ func Find(rel ...string) string {
 		return ""
 	}
 	return findFrom(filepath.Dir(exe), rel...)
+}
+
+// DevRel 返回开发布局下的路径片段：dist/<ProductDir>/<rel...>。
+//
+// 与分发候选（直接 <rel...>）并列交给 Find：哪个先命中取决于从可执行文件
+// 向上第几层存在该目录，两条都试才能同时覆盖两种运行方式。
+func DevRel(rel ...string) []string {
+	return append([]string{"dist", ProductDir}, rel...)
 }
 
 // Name 按平台补上可执行文件后缀。

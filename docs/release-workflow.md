@@ -18,18 +18,22 @@ Release 挂载 11 个资产，命名固定：
 
 ```
 Release v1.2.3
-├── VideoLib_1.2.3_windows_amd64.zip             # 轻量包（默认下载）
-├── VideoLib_1.2.3_macos_arm64.tar.gz
-├── VideoLib_1.2.3_macos_amd64.tar.gz
-├── VideoLib_1.2.3_full_windows_amd64.zip        # 整包（离线用，含刮削器）
-├── VideoLib_1.2.3_full_macos_arm64.tar.gz
-├── VideoLib_1.2.3_full_macos_amd64.tar.gz
+├── videolib_1.2.3_windows_amd64.zip             # 轻量包（默认下载）
+├── videolib_1.2.3_darwin_arm64.zip
+├── videolib_1.2.3_darwin_amd64.zip
+├── videolib_1.2.3_full_windows_amd64.zip        # 整包（离线用，含刮削器）
+├── videolib_1.2.3_full_darwin_arm64.zip
+├── videolib_1.2.3_full_darwin_amd64.zip
 ├── scraper_0.4.3_windows_amd64.zip              # 刮削器组件包
-├── scraper_0.4.3_macos_arm64.zip
-├── scraper_0.4.3_macos_amd64.zip
+├── scraper_0.4.3_darwin_arm64.zip
+├── scraper_0.4.3_darwin_amd64.zip
 ├── manifest.json                                # 组件清单（版本/大小/sha256/URL）
 └── SHA256SUMS.txt
 ```
+
+平台段取 **GOOS**（`darwin` / `windows`），不是 `macos`：更新器按
+`runtime.GOOS` 拼后缀找资产，改名会让老版本的自更新静默失效。归档一律 `.zip`
+（macOS 用 `zip -qry -X`，`-y` 保符号链接）。
 
 ### 为什么分成四组
 
@@ -45,24 +49,24 @@ Release v1.2.3
 
 ### 两种 App 包的目录结构
 
-轻量包（默认）：
+轻量包（默认）解压后得到唯一目录 `VideoLib/`，内含 App，**不含** `tools/`：
 
 ```
-VideoLib.exe                      # macOS 为 VideoLib.app/
-tools/                            # 空目录或只有 ffprobe
+VideoLib/VideoLib.exe                # macOS 为 VideoLib/VideoLib.app/
 ```
 
-整包（`_full_`）：
+整包（`_full_`）顶层同样是 `VideoLib/`，只多一个组件目录：
 
 ```
-VideoLib.exe
-tools/scraper/{scraper.exe,_internal/}
+VideoLib/VideoLib.exe
+VideoLib/tools/scraper/{scraper.exe,_internal/}
+VideoLib/tools/ffprobe/ffprobe.exe   # 可选，来自 third_party/
 ```
 
-`tools/scraper/` 这一层由 `tools/package.{sh,ps1}` 定义，App 侧
+`tools/<组件>/` 这一层由 `tools/package.{sh,ps1}` 定义，App 侧
 （`go/internal/toolpath`）按同一路径探测。构建末尾对两种形态各有一道断言：
-轻量包断言 `tools/scraper` **不存在**（否则包会悄悄回涨 31 MB），整包断言
-存在且能真跑一次 `scraper version`。
+轻量包断言 `tools/` **不存在**（否则包会悄悄回涨 30 MB），整包断言存在且能
+真跑一次 `scraper version`。
 
 ### 为什么不再「两个 exe 双击即用」
 
@@ -75,8 +79,8 @@ onefile 每次启动都要把 20 MB 载荷解压到临时目录：启动慢 1–
 
 ## 3. 用户首次使用流程
 
-1. 从 Release 下载对应平台的轻量包（`VideoLib_<ver>_<os>_<arch>.zip`，macOS 为 `.tar.gz`）
-2. 解压，得到 App
+1. 从 Release 下载对应平台的轻量包（`videolib_<ver>_<os>_<arch>.zip`）
+2. 解压，得到一个 `VideoLib/` 目录，直接运行其中的 App
 3. 启动 App → 添加视频库 → 浏览、播放（这条路径完全不需要刮削器）
 4. 第一次点「开始刮削」时，页面顶部出现「刮削器还没安装 · 下载安装」（约 20 MB），
    点一下即装好并立即生效，不需要重启
@@ -84,7 +88,7 @@ onefile 每次启动都要把 20 MB 载荷解压到临时目录：启动慢 1–
 刮削器的定位顺序（`go/components.go` 的 `resolveScraperLocked`）：
 
 ```
-显式配置的 scraper_path → 已下载的组件 → 随包 tools/scraper → 开发 tools/bin → PATH
+显式配置的 scraper_path → 已下载的组件 → 随包 tools/scraper → 开发 dist/VideoLib/tools/scraper → PATH
 ```
 
 组件排在随包之前：用户装过新版组件时，旧的内置副本不该压过它。整包用户不会
@@ -105,7 +109,11 @@ onefile 每次启动都要把 20 MB 载荷解压到临时目录：启动慢 1–
 
 ## 4. Workflow 流水线
 
-文件：`.github/workflows/build.yml`
+文件：`.github/workflows/release.yml`
+
+工作流只做四件事：解析版本 → 调 `tools/build.sh` / `tools\build.ps1` →
+断言产物 → 传 artifact。构建参数（wails 平台、ldflags、文件名）一律不重复
+写在 YAML 里。
 
 ### 4.1 触发条件
 
@@ -116,26 +124,36 @@ on:
   workflow_dispatch:   # 手动触发，用于冒烟验证
 ```
 
-tag 格式校验：`vMAJOR.MINOR.PATCH`，不匹配则立即失败。
+tag 格式校验：仅 tag 构建校验 `vMAJOR.MINOR.PATCH`；分支冒烟跳过。
 
-### 4.2 Job 1：build-windows / build-macos
+### 4.2 Job 1：build-app（矩阵：darwin/arm64、darwin/amd64、windows/amd64）
 
-两平台各一个 job（macOS 再按 `arm64` / `amd64` 分矩阵），步骤序列一致：
+步骤序列（两个平台一致，构建收在脚本里）：
 
 ```
-checkout → 安装 Go（按 go.mod 锁定）+ uv + Python 3.14 → uv sync
-  → 注入刮削器版本号（写 _version.py）
-  → PyInstaller onedir 打包 scraper
-  → scraper version + doctor 自检
+checkout（fetch-depth 0，脚本靠 git describe 取版本）
+  → 解析版本（tag 去掉 v；冒烟用 0.1.0）
+  → 安装 Go（按 go.mod 锁定）+ Node 22 + uv + Python 3.14
+  → 安装 Wails CLI
+  → 非 tag：写空清单 {"schema":1,"components":{}}
+  → tools/build.sh --full -v <ver>（Windows：tools\build.ps1 -Full -Version <ver>）
+      内部：PyInstaller onedir → wails build → tools/component.sh → 组装整包
+  → 仅 tag：manifestgen -only <本平台> → 写 go/internal/component/manifest_builtin.json
+  → 仅 tag：再跑一次 --no-python --full，把清单 embed 进 App
+  → 断言整包结构（.app/Contents/MacOS/…、tools/scraper/{scraper,_internal}）
+     并从最终位置真跑一次 scraper version
   → 断言瘦身生效（无 selenium-manager 残留）
-  → 打包刮削器分发资产（zip + 自述）→ 断言 zip 顶层只有 scraper/ → manifestgen 自校验
-  → 生成本平台兜底清单（manifestgen -only <本平台> 写进 go/internal/component/；**仅 tag 构建**）
-  → 安装 Wails CLI → 注入 wails.json productVersion
-  → wails build（ldflags 注入版本号，兜底清单就在这一步被 //go:embed 进去）
-  → 组装轻量包（package 默认）→ 断言不含 tools/scraper → 打 App 包
-  → 组装整包（package --full）→ 断言结构并真跑一次 version → 打整包
-  → 上传 artifact
+  → tools/package.sh -v <ver>（Windows：tools\package.ps1）产出标准包
+  → 断言标准包顶层唯一 VideoLib/ 且不含 tools/
+  → 上传 dist/release/*.zip 与 scraper_meta_*.json
 ```
+
+**为什么 tag 构建跑两遍 `build.sh`**：兜底清单的数据（组件包尺寸/sha256/版本）
+由 `tools/component.sh` 在 `build.sh` 末尾才产出，而清单要在 `wails build`
+之前存在才能被 `//go:embed` 进去。第二遍用 `--no-python` 复用 Python 产物，
+只重编 App；组件包从同一棵未改动的产物树重打，内容一致，内置清单里的
+sha256 与最终上传的包对得上。冒烟构建（非 tag）不需要清单里的真实数据，
+直接写空清单，只跑一遍。
 
 关键步骤说明：
 
@@ -146,18 +164,11 @@ checkout → 安装 Go（按 go.mod 锁定）+ uv + Python 3.14 → uv sync
 所以分支构建走另一条分支：写入 `{"schema":1,"components":{}}` 空清单，组件
 安装改走在线清单。想验证「断网也能装」这条路径，必须打 tag。
 
-**uv 缓存**：通过 `actions/cache` 缓存 uv 的包缓存目录，加速后续构建的依赖
-安装。缓存 key 基于 `uv.lock` 的 hash，依赖变更时自动失效。
+**uv 缓存**：用 `astral-sh/setup-uv`，它默认按 `uv.lock` 缓存依赖，不需要
+额外的 `actions/cache` 步骤。
 
-```yaml
-- uses: actions/cache@v4
-  with:
-    path: ~/.cache/uv
-    key: uv-${{ runner.os }}-${{ hashFiles('python/uv.lock') }}
-```
-
-**版本号注入**：同一份 `VERSION`（tag 去掉 `v`；非 tag 冒烟用测试版本 `0.1.0`）
-在构建前写入三处，避免 UI / 文件属性 / 刮削器自述不一致：
+**版本号注入**：同一份 `VERSION`（tag 去掉 `v`；非 tag 冒烟用 `0.1.0`）交给
+build 脚本，由它统一写入三处，避免 UI / 文件属性 / 刮削器自述不一致：
 
 1. `-ldflags "-X videolib/internal/version.Version=${VERSION}"` → Go 二进制
    （前端 `GetAppVersion`、顶栏与关于页读这里）
@@ -165,32 +176,27 @@ checkout → 安装 Go（按 go.mod 锁定）+ uv + Python 3.14 → uv sync
 3. `python/src/scraper/_version.py` 的 `__version__` → PyInstaller 打包的刮削器
    （`scraper version` / 设置页环境诊断显示这里）
 
-本地 `tools/build.sh` 不读 tag；App 默认测试版本 `0.1.0`（`version.go`），
-刮削器默认 `0.4.3`（`_version.py`）。需要指定时：
-
-```bash
-VIDEOLIB_VERSION=1.2.3 SCRAPER_VERSION=1.2.3 tools/build.sh
-```
+本地覆盖版本号：`tools/build.sh -v 1.2.3`（Windows：`tools\build.ps1 -Version 1.2.3`）。
+不传时按 `git describe --tags --exact-match` 取，取不到用 `0.0.0-dev`。
 
 > 组件包与 manifest 里的刮削器版本**不读 tag**，而是读 `scraper version` 的输出。
 > 这是刻意的：清单里的版本必须与产物自述一致，否则用户装完会一直停在「可更新」。
-> 将来若要让刮削器版本真正独立于 App 版本（只在刮削逻辑改动时 bump），只需
-> 停止注入 `_version.py` —— 清单会自动跟着产物走，CI 无需再改。
 
-**产物自检**：打包完成后立即运行 `scraper version` 和 `doctor`，在 CI 阶段就
-暴露环境问题（如 seleniumbase 资源缺失），而不是等用户拿到产物才发现。
+**产物自检**：整包断言里会从 `dist/VideoLib/tools/scraper/` 真跑一次
+`scraper version`，在 CI 阶段就暴露「_internal 没跟可执行文件同级」这类问题，
+而不是等用户拿到产物才发现。
 
-**组件包形状断言**：`Compress-Archive -Path python\dist\scraper` 在 PowerShell 7
-上会把 `scraper\` 作为顶层目录保留（实测；写成 `python\dist\scraper\*` 才会平铺成
-一坨）。解压侧靠 `component.TopLevelDir` 剥这一层，而 manifestgen 的校验是
-「TopLevelDir + 可执行文件」，平铺的包同样能过 —— 所以 Windows job 额外断言
-zip 里每个条目都以 `scraper/` 开头。这条契约只由一行命令维持，被改成通配符时
-不该等用户装完才发现。
+**组件包形状**：`tools/component.sh` 用 `zip -qry -X`（macOS）/ `Compress-Archive`
+（Windows）打包，顶层保留 `scraper/`。解压侧靠 `component.TopLevelDir` 剥这一层，
+而 manifestgen 的校验是「TopLevelDir + 可执行文件」，平铺的包同样能过 —— 所以
+脚本本身再断言一次 zip 顶层只有 `scraper/`。这条契约只由一行命令维持，被改成
+通配符时不改等用户装完才发现。
 
-**瘦身断言**：`find python/dist/scraper -name 'selenium-manager*'` 有结果就失败。
-这三份二进制共 12.4 MB 且永不被调用（`browser_launcher.py` 显式传了驱动路径），
-`scraper.spec` 按名字过滤掉了。PyInstaller 升级会改变 hook 的收集行为，把它们
-悄悄装回来时构建照样成功 —— 只有包体积回涨。断在这里比等用户发现包里多东西早。
+**瘦身断言**：`find python/build/pyi/dist/scraper -name 'selenium-manager*'`
+有结果就失败。这三份二进制共 12.4 MB 且永不被调用（`browser_launcher.py` 显式
+传了驱动路径），`packaging/pyinstaller.spec` 按名字过滤掉了。PyInstaller 升级会
+改变 hook 的收集行为，把它们悄悄装回来时构建照样成功 —— 只有包体积回涨。
+断在这里比等用户发现包里多东西早。
 
 ### 4.3 Job 2：release（ubuntu runner）
 
@@ -290,8 +296,8 @@ RemoveComponent(name string) error  // 只删组件目录，不动手动配置�
 - scraper `__version__`：`1.2.3`（构建时写入 `_version.py`）
 - 前端顶栏 / 关于页：读 `GetAppVersion`（来自上述 Go 内嵌版本）
 - Release 标题：`v1.2.3`
-- App 轻量包：`VideoLib_<appver>_<os>_<arch>.zip|tar.gz`
-- App 整包：`VideoLib_<appver>_full_<os>_<arch>.zip|tar.gz`
+- App 轻量包：`videolib_<appver>_<os>_<arch>.zip`
+- App 整包：`videolib_<appver>_full_<os>_<arch>.zip`
 - 组件包文件名：`scraper_<scrver>_<os>_<arch>.zip`
 - manifest 里的 `version` / `protocol`：来自组件包内可执行文件的 `version` 输出
 - 本地手动打包：App 默认 `0.1.0`，scraper 默认 `0.4.3`（测试版本号）

@@ -125,7 +125,9 @@
 │           └── api.js               # 统一封装 binding 与事件
 ├── python/                          # ─── 刮削器 ───
 │   ├── pyproject.toml
-│   ├── scraper.spec                 # PyInstaller 配置
+│   ├── packaging/
+│   │   ├── pyinstaller.spec         # PyInstaller 配置
+│   │   └── entry.py                 # PyInstaller 入口脚本
 │   ├── src/scraper/
 │   │   ├── __init__.py
 │   │   ├── __main__.py              # 入口，参数解析
@@ -139,13 +141,13 @@
 │   │       ├── javlibrary.py        # 站点解析实现（浏览器 + Cloudflare）
 │   │       └── javranking.py        # 站点解析实现（纯 HTTP + JSON 索引）
 │   └── tests/
-├── tools/
-│   ├── build.sh                     # macOS 一键：Python + Go + 组装
-│   ├── package.{sh,ps1}             # 组装 dist（CI 直接调用）
-│   └── bin/                         # ─── 运行时依赖（不提交大文件）───
-│       ├── ffprobe.exe
-│       └── scraper/                 # PyInstaller onedir 产物
-└── dist/                            # 最终分发产物（gitignore）
+├── tools/                           # ─── 构建与打包脚本（只放脚本）───
+│   ├── config.env                   # 唯一的项目差异
+│   ├── build.sh / package.sh / component.sh
+│   └── build.ps1 / package.ps1 / component.ps1
+├── third_party/                     # 随包分发的预置二进制 <name>/<os>-<arch>/
+│   └── ffprobe/darwin-arm64/ffprobe
+└── dist/                            # 组装目录与归档（gitignore）
 ```
 
 **为什么 Go 要单独一个 `go/` 子目录**：Wails CLI 要求 `wails.json` 与 Go module 同根。
@@ -188,7 +190,7 @@ type Config struct {
     Libraries   []LibraryRef `json:"libraries"`     // 可配置多个视频库根
     Concurrency int          `json:"concurrency"`   // 刮削并发，默认 2
     ScrapeTimeoutMin int     `json:"scrape_timeout_min"`
-    ScraperPath string       `json:"scraper_path"`  // 空则按 components → tools/scraper → tools/bin → PATH 探测
+    ScraperPath string       `json:"scraper_path"`  // 空则按 components → tools/scraper → dist/VideoLib/tools/scraper → PATH 探测
     FFprobePath string       `json:"ffprobe_path"`
     PlayerPath  string       `json:"player_path"`   // 外部播放器，空则走系统默认关联
     Theme       string       `json:"theme"`    // system | dark | light，未设置默认 system（跟随系统）
@@ -315,7 +317,7 @@ type MediaInfo struct {
 func Probe(ctx context.Context, ffprobePath, videoPath string) (MediaInfo, error)
 ```
 
-- ffprobe 随 App 分发（`tools/bin/ffprobe.exe`），不依赖用户 PATH
+- ffprobe 随 App 分发（`tools/ffprobe/ffprobe.exe`），不依赖用户 PATH
 - 外部进程，用信号量限制并发（建议 ≤4）
 - **不要在每次扫描时都跑**：只在 `index` 首次入库、或文件 mtime/size 变化时跑，结果缓存在 DB
 
@@ -557,7 +559,8 @@ Python 侧是一个**无状态的一次性抓取工具**。它：
 ```
 python/
 ├── pyproject.toml
-├── scraper.spec                     # PyInstaller 配置
+├── packaging/pyinstaller.spec       # PyInstaller 配置
+├── packaging/entry.py               # 打包入口
 ├── src/scraper/
 │   ├── __init__.py
 │   ├── __main__.py                  # 入口
@@ -1142,8 +1145,8 @@ Python**（跑 hook、导入模块、读 `sys` 信息）来推断依赖。macOS 
 
 | 路径 | 说明 |
 |---|---|
-| GitHub Actions `windows-latest` | 官方推荐做法。见 `.github/workflows/build.yml` |
-| Windows 机器直接打 | 在 `python/` 下 `uv run pyinstaller scraper.spec` |
+| GitHub Actions `windows-latest` | 官方推荐做法。见 `.github/workflows/release.yml` |
+| Windows 机器直接打 | 在 `python/` 下 `uv run pyinstaller packaging/pyinstaller.spec --distpath build/pyi/dist --workpath build/pyi/work` |
 | Windows 虚拟机 | 官方推荐做法，但需装完整 Python 环境 |
 
 macOS 上跑 `tools/build.sh`（或其中的 PyInstaller 步骤）仍然有价值：它能验证**打包配置本身**是否成立
@@ -1357,7 +1360,7 @@ if (... getattr(sb_config.settings, "NEW_DRIVER_DIR", None)
 
 | Phase | 内容 | 产出 | 验收标准 |
 |---|---|---|---|
-| **P0** | Python 打包冒烟验证 | `scraper.spec` + 打包脚本 | 干净 Windows 上 exe 跑通一个番号，图片落盘正确；**且明确回答 R13：驱动从哪来** |
+| **P0** | Python 打包冒烟验证 | `packaging/pyinstaller.spec` + 打包脚本 | 干净 Windows 上 exe 跑通一个番号，图片落盘正确；**且明确回答 R13：驱动从哪来** |
 | **P1** | Python 剥离为 CLI | `python/` 全部模块 | `echo '{...}' \| scraper.exe scrape` 能输出合规 NDJSON；`doctor` 正常；Ctrl-C 能干净退出 |
 | **P2** | Go 骨架 + 观影模块 | `config` / `library` / `media` / 前端 WatchView | 手工放一份边车 JSON，App 能扫描、展示卡片墙、内嵌播放并可拖动进度 |
 | **P3** | SQLite 索引 | `index` 全部 | 「重建索引」幂等；搜索/筛选/排序可用；删库后能完整重建 |

@@ -1,127 +1,138 @@
 #!/usr/bin/env bash
-# 一键构建 macOS 本机整包：Python 刮削器 + Go 桌面 App + dist/VideoLib。
+# 一键构建：Python 组件（模板 B）→ Go/Wails → 组装 dist/<PRODUCT> → 归档 dist/release。
 #
-# 用法：
-#   tools/build.sh          # 完整构建：scraper + App + dist/VideoLib
-#   tools/build.sh --go     # 只重建 Go App 并组装 dist（跳过 PyInstaller）
+# 用法
+#   tools/build.sh                 标准包
+#   tools/build.sh --full          整包（模板 B 带 tools/ 组件）
+#   tools/build.sh --no-python     复用 python/build/pyi/dist 里已有产物
+#   tools/build.sh --package-only  只组装与归档，不构建
+#   tools/build.sh -v 1.2.3        覆盖版本号（默认取 git tag，无 tag 用 0.0.0-dev）
 #
-# --go 适用于改样式/改 Go 后快速查看：复用 tools/bin/scraper 里已有的刮削器，
-# 不再每次跑一遍 Python 打包。首次完整构建仍用默认无参方式。
-#
-# 版本号（本地测试版本，与 CI 推 tag 注入无关）：
-#   App     → go/internal/version/version.go 的 Version（默认 0.1.0）
-#             可选：VIDEOLIB_VERSION=1.2.3 tools/build.sh
-#             或 wails build -ldflags "-X videolib/internal/version.Version=1.2.3"
-#   scraper → python/src/scraper/_version.py（默认 0.4.3）
-#             可选：SCRAPER_VERSION=1.2.3 tools/build.sh
-#
-# 硬约束（与 CI / architecture.md §9 一致）：
-#   * PyInstaller 不能交叉编译 —— scraper 只能是本机架构。
-#   * 本机自测出当前架构整包即可；Windows / 另一架构走 CI。
-#
-# 产物：
-#   dist/VideoLib/          本机可直接运行的分发目录
+# 为什么把构建收进脚本而不是写在 CI 里：CI 里那份命令没人能在本地跑一遍，
+# 「本机过了、CI 挂了」和「CI 过了、用户装了跑不起来」都只能靠推 tag 才发现。
 set -euo pipefail
 
-repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=common.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+host_platform
 
-# 本地可选注入；未设置时保持源码里的测试版本号。
-app_version="${VIDEOLIB_VERSION:-}"
-scraper_version="${SCRAPER_VERSION:-}"
-
+want_full=0
 build_python=1
-for arg in "$@"; do
-    case "$arg" in
-        --go)
+build_app=1
+version_arg=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --full) want_full=1 ;;
+        --no-python) build_python=0 ;;
+        --package-only)
             build_python=0
+            build_app=0
+            ;;
+        -v | --version)
+            [[ $# -ge 2 ]] || die "$1 需要一个版本号"
+            version_arg="$2"
+            shift
             ;;
         -h | --help)
-            sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            sed -n '3,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
-        *)
-            echo "未知参数：$arg" >&2
-            echo "用法：tools/build.sh [--go]" >&2
-            exit 1
-            ;;
+        *) die "未知参数：$1（可用：--full、--no-python、--package-only、-v）" ;;
     esac
+    shift
 done
 
-# 整包 3 步；--go 跳过 Python，剩 2 步（Go App + 组装）。
-if ((build_python)); then
-    step_total=3
-else
-    step_total=2
-fi
-step=0
+VERSION="$(resolve_version "$version_arg")"
+[[ "$HAS_PYTHON" == 1 ]] || build_python=0
 
-host_os="$(uname -s)"
-host_arch="$(uname -m)"
-if ((build_python)); then
-    echo "==> 目标：${host_os} ${host_arch} 整包"
-else
-    echo "==> 目标：${host_os} ${host_arch}（仅 Go App，跳过 Python）"
+echo "==> 目标：${HOST_OS}/${HOST_ARCH}  版本：${VERSION}"
+
+# 每次完整构建都清空归档目录：残留的旧 zip 会被 SHA256SUMS 与资产数量断言算进去，
+# 表现为「本地 12 个资产、CI 11 个」。--package-only 不清，它本来就复用已有产物。
+if [[ "$build_app" == 1 || "$build_python" == 1 ]]; then
+    rm -rf "$ROOT/dist/release"
 fi
 
-if ((build_python)); then
-    step=$((step + 1))
-    echo
-    echo "==> [$step/$step_total] 构建 Python 刮削器（本机架构）"
-    if [[ -n "$scraper_version" ]]; then
-        printf '__version__ = "%s"\n' "$scraper_version" \
-            > "$repo/python/src/scraper/_version.py"
-        echo "刮削器版本号已设为 $scraper_version"
+if [[ "$build_python" == 1 ]]; then
+    step "1/4 构建 Python 组件（${PY_BUILD_NAME}）"
+    command -v uv >/dev/null 2>&1 || die "未找到 uv。安装：https://docs.astral.sh/uv/"
+    # 只改 __version__ 那一行：文件里通常还有「这个值是注入的、产物自述才是结果」
+    # 之类的说明，整文件覆盖会把它们一起抹掉，下一个人照着空文件改就丢了依据。
+    ver_file="$ROOT/python/src/$PY_PACKAGE/_version.py"
+    if command -v python3 >/dev/null 2>&1 && [[ -f "$ver_file" ]]; then
+        python3 - "$ver_file" "$VERSION" <<'VEREOF'
+import pathlib, re, sys
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+line = f'__version__ = "{sys.argv[2]}"'
+if re.search(r'^__version__ = ".*"$', text, re.M):
+    text = re.sub(r'^__version__ = ".*"$', line, text, count=1, flags=re.M)
+else:
+    text = text.rstrip("\n") + "\n\n" + line + "\n"
+path.write_text(text, encoding="utf-8")
+VEREOF
+    else
+        printf '__version__ = "%s"\n' "$VERSION" > "$ver_file"
     fi
-    cd "$repo/python"
-    uv sync
-    uv run pyinstaller scraper.spec --noconfirm
-
-    dest="$repo/tools/bin/scraper"
-    if [[ -e "$dest" ]]; then
-        rm -rf -- "$dest"
-    fi
-    mv dist/scraper "$dest"
-    echo "刮削器已输出到 $dest"
-    echo "--- 自检 ---"
-    "$dest/scraper" version || true
+    ( cd "$ROOT/python" && uv sync && rm -rf build/pyi &&
+        uv run pyinstaller packaging/pyinstaller.spec --noconfirm \
+            --distpath build/pyi/dist --workpath build/pyi/work )
+    py_out="$ROOT/python/build/pyi/dist/$PY_BUILD_NAME"
+    [[ -e "$py_out" ]] || die "PyInstaller 未产出 $py_out"
+    note "产物：python/build/pyi/dist/$PY_BUILD_NAME"
 else
-    dest="$repo/tools/bin/scraper"
-    if [[ ! -e "$dest" ]]; then
-        echo "未找到已有刮削器 ${dest}。请先跑一次完整构建：tools/build.sh" >&2
-        exit 1
-    fi
-    echo
-    echo "==> 跳过 Python 刮削器打包（复用 ${dest}）"
+    step "1/4 跳过 Python 组件（复用已有产物）"
 fi
 
-step=$((step + 1))
-echo
-echo "==> [$step/$step_total] 构建 Go 桌面 App（本机平台）"
-cd "$repo/go"
-if ! command -v wails >/dev/null 2>&1; then
-    echo "未找到 wails CLI。安装：" >&2
-    echo "  go install github.com/wailsapp/wails/v2/cmd/wails@latest" >&2
-    exit 1
-fi
-wails_args=(-clean)
-if [[ -n "$app_version" ]]; then
-    wails_args+=(-ldflags "-X videolib/internal/version.Version=${app_version}")
-    echo "App 版本号已设为 $app_version"
-fi
-wails build "${wails_args[@]}"
-echo "产物在 $repo/go/build/bin/"
-
-step=$((step + 1))
-echo
-echo "==> [$step/$step_total] 组装分发目录"
-# 本地刻意组装整包（含 tools/scraper）：开发时改完代码要能直接刮一刀，
-# 不该每次都先走一遍「下载 20MB 组件」。发布用的轻量包由 CI 组装。
-# 想验证轻量包形态：tools/package.sh（不带参数即轻量）。
-"$repo/tools/package.sh" --full
-
-echo
-if ((build_python)); then
-    echo "完成。本机整包：$repo/dist/VideoLib"
+# 组件包必须排在 wails build 之前：模板 B 会把「本平台的组件清单」编译进 App，
+# 而清单要从组件产物里读版本。生成清单的事放 tools/prebuild.sh，各仓库自定。
+if [[ -f "$ROOT/tools/component.sh" ]]; then
+    step "2/4 生成组件包"
+    bash "$ROOT/tools/component.sh" -v "$VERSION"
 else
-    echo "完成。仅刷新 App 的分发目录：$repo/dist/VideoLib"
+    step "2/4 无组件包（模板 A）"
 fi
+
+if [[ -f "$ROOT/tools/prebuild.sh" ]]; then
+    step "3/4 预构建钩子（tools/prebuild.sh）"
+    bash "$ROOT/tools/prebuild.sh" -v "$VERSION"
+else
+    step "3/4 无预构建钩子"
+fi
+
+if [[ "$build_app" == 1 ]]; then
+    step "4/4 构建 Go / Wails 应用（${PRODUCT}）"
+    command -v wails >/dev/null 2>&1 || die "未找到 wails CLI。安装：go install github.com/wailsapp/wails/v2/cmd/wails@latest"
+    # wails.json 的 productVersion 决定 macOS Info.plist / Windows 文件属性，
+    # 与 -ldflags 注入的是同一个版本号。它只改工作区，不提交。
+    if command -v python3 >/dev/null 2>&1; then
+        ( cd "$ROOT/go" && python3 - "$VERSION" <<'PY'
+import json, sys
+from pathlib import Path
+p = Path("wails.json")
+d = json.loads(p.read_text(encoding="utf-8"))
+d.setdefault("info", {})["productVersion"] = sys.argv[1]
+p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+PY
+        )
+    else
+        note "未找到 python3，跳过 wails.json productVersion 更新（不影响构建）"
+    fi
+    wails_args=(-clean -platform "${HOST_OS}/${HOST_ARCH}")
+    # GO_MODULE 为空表示这个仓库没有 internal/version 注入点（版本只体现在
+    # wails.json 的 productVersion 上），此时不要硬塞 -X。
+    if [[ -n "$GO_MODULE" ]]; then
+        wails_args+=(-ldflags "-X ${GO_MODULE}/internal/version.Version=${VERSION}")
+    fi
+    # Windows 上 wails 2.16 会省略 .exe，显式给 -o 才能拿到确定的文件名。
+    [[ "$HOST_OS" == windows ]] && wails_args+=(-o "$EXE.exe")
+    ( cd "$ROOT/go" && wails build "${wails_args[@]}" )
+    note "产物：go/build/bin/"
+else
+    step "4/4 跳过 Go / Wails 构建（复用已有产物）"
+fi
+
+step "组装与归档"
+package_args=(-v "$VERSION")
+[[ "$want_full" == 1 ]] && package_args+=(--full)
+"$ROOT/tools/package.sh" "${package_args[@]}"

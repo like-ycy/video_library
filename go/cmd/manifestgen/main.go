@@ -108,9 +108,11 @@ type options struct {
 
 // slugToGOOS 把发布文件名里的平台词映射到 GOOS。
 //
-// 只有这一处做翻译，且方向是「文件名 → GOOS」。反向查表（GOOS → 文件名）在
-// 生成清单时用不上，多写一份只会多一处可能漏项的地方。
+// 归档与 meta 的平台段现在直接用 GOOS（darwin），不再写 macos：更新器按
+// runtime.GOOS 拼后缀找资产，两套写法并存时，改名会让老版本的自更新静默失效。
+// macos 保留给旧资产（历史 Release 上仍是那个名字），读旧清单不会失败。
 var slugToGOOS = map[string]string{
+	"darwin":  "darwin",
 	"macos":   "darwin",
 	"windows": "windows",
 	"linux":   "linux",
@@ -421,7 +423,7 @@ func fileSHA256(path string) (string, int64, error) {
 	return hex.EncodeToString(hasher.Sum(nil)), size, nil
 }
 
-// splitSlugArch 从 "macos_arm64" 这种后缀里切出平台与架构。
+// splitSlugArch 从 "darwin_arm64" 这种后缀里切出平台与架构。
 func splitSlugArch(stem string) (slug, arch string, err error) {
 	idx := strings.LastIndexByte(stem, '_')
 	if idx <= 0 || idx == len(stem)-1 {
